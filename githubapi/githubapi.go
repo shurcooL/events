@@ -290,12 +290,6 @@ func convert(events []*github.Event, commits map[string]*github.RepositoryCommit
 				Commits: cs,
 			}
 
-		// TODO: Move between create and delete events.
-		case *github.ForkEvent:
-			ee.Payload = event.Fork{
-				Container: "github.com/" + *p.Forkee.FullName,
-			}
-
 		case *github.WatchEvent:
 			ee.Payload = event.Star{}
 
@@ -318,6 +312,10 @@ func convert(events []*github.Event, commits map[string]*github.RepositoryCommit
 				//e.Details = code{
 				//	Text: *p.Ref,
 				//}
+			}
+		case *github.ForkEvent:
+			ee.Payload = event.Fork{
+				Container: "github.com/" + *p.Forkee.FullName,
 			}
 		case *github.DeleteEvent:
 			ee.Payload = event.Create{
