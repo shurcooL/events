@@ -34,7 +34,7 @@ func (s *service) List(_ context.Context) ([]event.Event, error) {
 	s.mu.Lock()
 	events := s.events
 	s.mu.Unlock()
-	// Reverse s.events order to get chronological order.
+	// Reverse order to get latest events first.
 	for i, j := 0, len(events)-1; i < j; i, j = i+1, j-1 {
 		events[i], events[j] = events[j], events[i]
 	}
