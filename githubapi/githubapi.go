@@ -318,7 +318,7 @@ func convert(events []*github.Event, commits map[string]*github.RepositoryCommit
 				Container: "github.com/" + *p.Forkee.FullName,
 			}
 		case *github.DeleteEvent:
-			ee.Payload = event.Create{
+			ee.Payload = event.Delete{
 				Type: *p.RefType, // TODO: Verify *p.RefType?
 				Name: *p.Ref,
 			}
