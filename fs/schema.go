@@ -40,8 +40,8 @@ func marshalUserSpec(us users.UserSpec) string {
 // ring has capacity of ringSize elements.
 // Zero value is an empty ring.
 type ring struct {
-	Start int // [0, ringSize-1]
-	N     int // [0, ringSize]
+	Start  int // Index of first element in ring, in [0, ringSize-1] range.
+	Length int // Number of elements within ring, in [0, ringSize] range.
 }
 
 const ringSize = 100
@@ -53,19 +53,19 @@ func (r ring) FromStart(i int) int {
 
 // FromEnd returns i-th index from end.
 func (r ring) FromEnd(i int) int {
-	return (r.Start + r.N - 1 - i) % ringSize
+	return (r.Start + r.Length - 1 - i) % ringSize
 }
 
 // Next returns a copy of ring with the next element added,
 // and the index of that element.
 func (r ring) Next() (ring ring, idx int) {
 	ring = r
-	if ring.N < ringSize {
-		ring.N++
+	if ring.Length < ringSize {
+		ring.Length++
 	} else {
 		ring.Start = (ring.Start + 1) % ringSize
 	}
-	idx = (ring.Start + ring.N - 1) % ringSize
+	idx = (ring.Start + ring.Length - 1) % ringSize
 	return ring, idx
 }
 

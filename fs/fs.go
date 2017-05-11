@@ -40,7 +40,7 @@ func (s *service) load() error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	for i := 0; i < s.ring.N; i++ {
+	for i := 0; i < s.ring.Length; i++ {
 		idx := s.ring.FromStart(i)
 		var event eventDisk
 		err := jsonDecodeFile(s.fs, eventPath(s.user, idx), &event)
@@ -56,7 +56,7 @@ func (s *service) load() error {
 func (s *service) List(_ context.Context) ([]event.Event, error) {
 	var events []event.Event
 	s.mu.Lock()
-	for i := 0; i < s.ring.N; i++ {
+	for i := 0; i < s.ring.Length; i++ {
 		// Reverse order to get latest events first.
 		events = append(events, s.events[s.ring.FromEnd(i)])
 	}
