@@ -44,7 +44,7 @@ type ring struct {
 	Length int // Number of elements within ring, in [0, ringSize] range.
 }
 
-const ringSize = 100
+const ringSize = 100 // Maximum capacity of the ring.
 
 // FromStart returns i-th index from start.
 func (r ring) FromStart(i int) int {
