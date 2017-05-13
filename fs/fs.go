@@ -36,14 +36,14 @@ type service struct {
 }
 
 func (s *service) load() error {
-	err := jsonDecodeFile(s.fs, ringPath(s.user), &s.ring)
+	err := jsonDecodeFile(context.Background(), s.fs, ringPath(s.user), &s.ring)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	for i := 0; i < s.ring.Length; i++ {
 		idx := s.ring.FromStart(i)
 		var event eventDisk
-		err := jsonDecodeFile(s.fs, eventPath(s.user, idx), &event)
+		err := jsonDecodeFile(context.Background(), s.fs, eventPath(s.user, idx), &event)
 		if err != nil {
 			return err
 		}
@@ -76,13 +76,13 @@ func (s *service) Log(ctx context.Context, event event.Event) error {
 
 	// Commit to storage first, returning error on failure.
 	ring, idx := s.ring.Next()
-	err := jsonEncodeFile(s.fs, eventPath(s.user, idx), fromEvent(event))
+	err := jsonEncodeFile(ctx, s.fs, eventPath(s.user, idx), fromEvent(event))
 	if err != nil {
 		return err
 	}
 	// Write the ring file after writing the event file was successful,
 	// so that partial failure is okay.
-	err = jsonEncodeFile(s.fs, ringPath(s.user), ring)
+	err = jsonEncodeFile(ctx, s.fs, ringPath(s.user), ring)
 	if err != nil {
 		return err
 	}

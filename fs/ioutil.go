@@ -9,11 +9,9 @@ import (
 	"golang.org/x/net/webdav"
 )
 
-// TODO: Propagate context.
-
 // jsonEncodeFile encodes v into file at path, overwriting or creating it.
-func jsonEncodeFile(fs webdav.FileSystem, path string, v interface{}) error {
-	f, err := fs.OpenFile(context.Background(), path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
+func jsonEncodeFile(ctx context.Context, fs webdav.FileSystem, path string, v interface{}) error {
+	f, err := fs.OpenFile(ctx, path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
@@ -22,8 +20,8 @@ func jsonEncodeFile(fs webdav.FileSystem, path string, v interface{}) error {
 }
 
 // jsonDecodeFile decodes contents of file at path into v.
-func jsonDecodeFile(fs webdav.FileSystem, path string, v interface{}) error {
-	f, err := vfsutil.Open(fs, path)
+func jsonDecodeFile(ctx context.Context, fs webdav.FileSystem, path string, v interface{}) error {
+	f, err := vfsutil.Open(ctx, fs, path)
 	if err != nil {
 		return err
 	}
