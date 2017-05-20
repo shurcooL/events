@@ -63,7 +63,6 @@ func (s *service) poll() {
 		s.fetchError = fetchError
 		s.mu.Unlock()
 
-		fmt.Println("pollInterval:", pollInterval)
 		if pollInterval < time.Minute {
 			pollInterval = time.Minute
 		}
