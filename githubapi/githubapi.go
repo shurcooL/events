@@ -328,8 +328,8 @@ func convert(events []*github.Event, commits map[string]*github.RepositoryCommit
 				pages = append(pages, event.Page{
 					Action:         *p.Action,
 					Title:          *p.Title,
-					PageHTMLURL:    "https://github.com" + *p.HTMLURL,
-					CompareHTMLURL: "https://github.com" + *p.HTMLURL + "/_compare/" + *p.SHA + "^..." + *p.SHA,
+					PageHTMLURL:    *p.HTMLURL,
+					CompareHTMLURL: *p.HTMLURL + "/_compare/" + *p.SHA + "^..." + *p.SHA,
 				})
 			}
 			ee.Payload = event.Gollum{
