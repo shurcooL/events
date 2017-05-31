@@ -128,7 +128,10 @@ func (e eventDisk) MarshalJSON() ([]byte, error) {
 }
 
 func (e *eventDisk) UnmarshalJSON(b []byte) error {
-	*e = eventDisk{}
+	// Ignore null, like in the main JSON package.
+	if string(b) == "null" {
+		return nil
+	}
 	var v struct {
 		Time      time.Time
 		Actor     user
@@ -140,6 +143,7 @@ func (e *eventDisk) UnmarshalJSON(b []byte) error {
 	if err != nil {
 		return err
 	}
+	*e = eventDisk{}
 	e.Time = v.Time
 	e.Actor = v.Actor.User()
 	e.Container = v.Container
