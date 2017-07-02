@@ -74,7 +74,6 @@ func (s *service) poll() {
 func (s *service) fetchEvents(ctx context.Context) (events []*github.Event, commits map[string]*github.RepositoryCommit, pollInterval time.Duration, err error) {
 	// TODO: Investigate this:
 	//       Events support pagination, however the per_page option is unsupported. The fixed page size is 30 items. Fetching up to ten pages is supported, for a total of 300 events.
-	// TODO: Caching via ETag, because If-Modified-Since doesn't seem to work.
 	events, resp, err := s.cl.Activity.ListEventsPerformedByUser(ctx, s.user, true, &github.ListOptions{PerPage: 100})
 	if err != nil {
 		return nil, nil, 0, err
