@@ -17,18 +17,22 @@ import (
 )
 
 // NewService creates a GitHub-backed events.Service using given GitHub client.
-func NewService(client *github.Client, user string) events.Service {
+// It fetches the events for the specified user. user.Domain must be "github.com".
+func NewService(client *github.Client, user users.User) (events.Service, error) {
+	if user.Domain != "github.com" {
+		return nil, fmt.Errorf(`user.Domain is %q, it must be "github.com"`, user.Domain)
+	}
 	s := &service{
 		cl:   client,
 		user: user,
 	}
 	go s.poll()
-	return s
+	return s, nil
 }
 
 type service struct {
 	cl   *github.Client
-	user string
+	user users.User
 
 	mu         sync.Mutex
 	events     []*github.Event
@@ -41,7 +45,7 @@ func (s *service) List(_ context.Context) ([]event.Event, error) {
 	s.mu.Lock()
 	events, commits, fetchError := s.events, s.commits, s.fetchError
 	s.mu.Unlock()
-	return convert(events, commits), fetchError
+	return convert(events, commits, s.user), fetchError
 }
 
 // Log logs the event.
@@ -74,7 +78,7 @@ func (s *service) poll() {
 func (s *service) fetchEvents(ctx context.Context) (events []*github.Event, commits map[string]*github.RepositoryCommit, pollInterval time.Duration, err error) {
 	// TODO: Investigate this:
 	//       Events support pagination, however the per_page option is unsupported. The fixed page size is 30 items. Fetching up to ten pages is supported, for a total of 300 events.
-	events, resp, err := s.cl.Activity.ListEventsPerformedByUser(ctx, s.user, true, &github.ListOptions{PerPage: 100})
+	events, resp, err := s.cl.Activity.ListEventsPerformedByUser(ctx, s.user.Login, true, &github.ListOptions{PerPage: 100})
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -131,7 +135,9 @@ func (s *service) fetchCommit(ctx context.Context, commitURL string) (*github.Re
 }
 
 // convert converts GitHub events. commits key is SHA.
-func convert(events []*github.Event, commits map[string]*github.RepositoryCommit) []event.Event {
+// knownUser is a known user, whose email and avatar URL
+// can be used when full commit details are unavailable.
+func convert(events []*github.Event, commits map[string]*github.RepositoryCommit, knownUser users.User) []event.Event {
 	var es []event.Event
 	for _, e := range events {
 		ee := event.Event{
@@ -265,9 +271,8 @@ func convert(events []*github.Event, commits map[string]*github.RepositoryCommit
 				commit := commits[*c.SHA]
 				if commit == nil {
 					avatarURL := "https://secure.gravatar.com/avatar?d=mm&f=y&s=96"
-					if *c.Author.Email == "shurcooL@gmail.com" {
-						// TODO: Can we de-dup this in a good way? It's in users service.
-						avatarURL = "https://dmitri.shuralyov.com/avatar-s.jpg"
+					if *c.Author.Email == knownUser.Email {
+						avatarURL = knownUser.AvatarURL
 					}
 					cs = append(cs, event.Commit{
 						SHA:             *c.SHA,
