@@ -281,9 +281,19 @@ func convert(events []*github.Event, commits map[string]*github.RepositoryCommit
 					})
 					continue
 				}
+				if commit.Author == nil {
+					// Commit does not have a GitHub user associated.
+					cs = append(cs, event.Commit{
+						SHA:             *c.SHA,
+						CommitMessage:   *c.Message,
+						AuthorAvatarURL: "https://secure.gravatar.com/avatar?d=mm&f=y&s=96",
+						HTMLURL:         *commit.HTMLURL,
+					})
+					continue
+				}
 				cs = append(cs, event.Commit{
-					SHA:             *commit.SHA,
-					CommitMessage:   *commit.Commit.Message,
+					SHA:             *c.SHA,
+					CommitMessage:   *c.Message,
 					AuthorAvatarURL: *commit.Author.AvatarURL,
 					HTMLURL:         *commit.HTMLURL,
 				})
