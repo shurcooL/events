@@ -41,7 +41,7 @@ func (s *service) load() error {
 		return err
 	}
 	for i := 0; i < s.ring.Length; i++ {
-		idx := s.ring.FromStart(i)
+		idx := s.ring.At(i)
 		var event eventDisk
 		err := jsonDecodeFile(context.Background(), s.fs, eventPath(s.user, idx), &event)
 		if err != nil {
@@ -56,9 +56,8 @@ func (s *service) load() error {
 func (s *service) List(_ context.Context) ([]event.Event, error) {
 	var events []event.Event
 	s.mu.Lock()
-	for i := 0; i < s.ring.Length; i++ {
-		// Reverse order to get latest events first.
-		events = append(events, s.events[s.ring.FromEnd(i)])
+	for i := s.ring.Length - 1; i >= 0; i-- { // Reverse order to get latest events first.
+		events = append(events, s.events[s.ring.At(i)])
 	}
 	s.mu.Unlock()
 	return events, nil
@@ -74,14 +73,14 @@ func (s *service) Log(ctx context.Context, event event.Event) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Commit to storage first, returning error on failure.
 	ring, idx := s.ring.Next()
+
+	// Commit to storage first, returning error on failure.
+	// Write the event file, then write the ring file, so that partial failure is less bad.
 	err := jsonEncodeFile(ctx, s.fs, eventPath(s.user, idx), fromEvent(event))
 	if err != nil {
 		return err
 	}
-	// Write the ring file after writing the event file was successful,
-	// so that partial failure is okay.
 	err = jsonEncodeFile(ctx, s.fs, ringPath(s.user), ring)
 	if err != nil {
 		return err

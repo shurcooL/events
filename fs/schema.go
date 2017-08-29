@@ -46,14 +46,9 @@ type ring struct {
 
 const ringSize = 100 // Maximum capacity of the ring.
 
-// FromStart returns i-th index from start.
-func (r ring) FromStart(i int) int {
+// At returns i-th index from start.
+func (r ring) At(i int) int {
 	return (r.Start + i) % ringSize
-}
-
-// FromEnd returns i-th index from end.
-func (r ring) FromEnd(i int) int {
-	return (r.Start + r.Length - 1 - i) % ringSize
 }
 
 // Next returns a copy of ring with the next element added,
