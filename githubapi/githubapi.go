@@ -75,7 +75,12 @@ func (s *service) poll() {
 }
 
 // fetchEvents fetches events and mentioned commits from GitHub.
-func (s *service) fetchEvents(ctx context.Context) (events []*github.Event, commits map[string]*github.RepositoryCommit, pollInterval time.Duration, err error) {
+func (s *service) fetchEvents(ctx context.Context) (
+	events []*github.Event,
+	commits map[string]*github.RepositoryCommit,
+	pollInterval time.Duration,
+	err error,
+) {
 	// TODO: Investigate this:
 	//       Events support pagination, however the per_page option is unsupported. The fixed page size is 30 items. Fetching up to ten pages is supported, for a total of 300 events.
 	events, resp, err := s.cl.Activity.ListEventsPerformedByUser(ctx, s.user.Login, true, &github.ListOptions{PerPage: 100})
@@ -94,10 +99,9 @@ func (s *service) fetchEvents(ctx context.Context) (events []*github.Event, comm
 					continue
 				}
 				rc, err := s.fetchCommit(ctx, *c.URL)
-				if err, ok := err.(*github.ErrorResponse); ok && err.Response.StatusCode == http.StatusNotFound {
+				if e, ok := err.(*github.ErrorResponse); ok && e.Response.StatusCode == http.StatusNotFound {
 					continue
-				}
-				if err != nil {
+				} else if err != nil {
 					return nil, nil, 0, fmt.Errorf("fetchCommit: %v", err)
 				}
 				commits[*c.SHA] = rc
@@ -108,10 +112,9 @@ func (s *service) fetchEvents(ctx context.Context) (events []*github.Event, comm
 			}
 			commitURL := *e.Repo.URL + "/commits/" + *p.Comment.CommitID // commitURL is "{repoURL}/commits/{commitID}".
 			rc, err := s.fetchCommit(ctx, commitURL)
-			if err, ok := err.(*github.ErrorResponse); ok && err.Response.StatusCode == http.StatusNotFound {
+			if e, ok := err.(*github.ErrorResponse); ok && e.Response.StatusCode == http.StatusNotFound {
 				continue
-			}
-			if err != nil {
+			} else if err != nil {
 				return nil, nil, 0, fmt.Errorf("fetchCommit: %v", err)
 			}
 			commits[*p.Comment.CommitID] = rc
@@ -126,18 +129,22 @@ func (s *service) fetchCommit(ctx context.Context, commitURL string) (*github.Re
 	if err != nil {
 		return nil, err
 	}
-	commit := new(github.RepositoryCommit)
-	_, err = s.cl.Do(ctx, req, commit)
+	var commit github.RepositoryCommit
+	_, err = s.cl.Do(ctx, req, &commit)
 	if err != nil {
 		return nil, err
 	}
-	return commit, nil
+	return &commit, nil
 }
 
 // convert converts GitHub events. commits key is SHA.
 // knownUser is a known user, whose email and avatar URL
 // can be used when full commit details are unavailable.
-func convert(events []*github.Event, commits map[string]*github.RepositoryCommit, knownUser users.User) []event.Event {
+func convert(
+	events []*github.Event,
+	commits map[string]*github.RepositoryCommit,
+	knownUser users.User,
+) []event.Event {
 	var es []event.Event
 	for _, e := range events {
 		ee := event.Event{
