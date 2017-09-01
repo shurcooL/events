@@ -4,6 +4,7 @@ package githubapi
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"strconv"
@@ -37,15 +38,16 @@ type service struct {
 	mu         sync.Mutex
 	events     []*github.Event
 	commits    map[string]*github.RepositoryCommit // SHA -> Commit.
+	prs        map[string]bool                     // PR API URL -> Pull Request merged.
 	fetchError error
 }
 
 // List lists events.
 func (s *service) List(_ context.Context) ([]event.Event, error) {
 	s.mu.Lock()
-	events, commits, fetchError := s.events, s.commits, s.fetchError
+	events, commits, prs, fetchError := s.events, s.commits, s.prs, s.fetchError
 	s.mu.Unlock()
-	return convert(events, commits, s.user), fetchError
+	return convert(events, commits, prs, s.user), fetchError
 }
 
 // Log logs the event.
@@ -56,13 +58,13 @@ func (s *service) Log(_ context.Context, event event.Event) error {
 
 func (s *service) poll() {
 	for {
-		events, commits, pollInterval, fetchError := s.fetchEvents(context.Background())
+		events, commits, prs, pollInterval, fetchError := s.fetchEvents(context.Background())
 		if fetchError != nil {
 			log.Println("fetchEvents:", fetchError)
 		}
 		s.mu.Lock()
 		if fetchError == nil {
-			s.events, s.commits = events, commits
+			s.events, s.commits, s.prs = events, commits, prs
 		}
 		s.fetchError = fetchError
 		s.mu.Unlock()
@@ -74,10 +76,11 @@ func (s *service) poll() {
 	}
 }
 
-// fetchEvents fetches events and mentioned commits from GitHub.
+// fetchEvents fetches events, as well as mentioned commits and PRs from GitHub.
 func (s *service) fetchEvents(ctx context.Context) (
 	events []*github.Event,
 	commits map[string]*github.RepositoryCommit,
+	prs map[string]bool,
 	pollInterval time.Duration,
 	err error,
 ) {
@@ -85,12 +88,13 @@ func (s *service) fetchEvents(ctx context.Context) (
 	//       Events support pagination, however the per_page option is unsupported. The fixed page size is 30 items. Fetching up to ten pages is supported, for a total of 300 events.
 	events, resp, err := s.cl.Activity.ListEventsPerformedByUser(ctx, s.user.Login, true, &github.ListOptions{PerPage: 100})
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, nil, 0, err
 	}
 	if pi, err := strconv.Atoi(resp.Header.Get("X-Poll-Interval")); err == nil {
 		pollInterval = time.Duration(pi) * time.Second
 	}
 	commits = make(map[string]*github.RepositoryCommit)
+	prs = make(map[string]bool)
 	for _, e := range events {
 		switch p := e.Payload().(type) {
 		case *github.PushEvent:
@@ -102,7 +106,7 @@ func (s *service) fetchEvents(ctx context.Context) (
 				if e, ok := err.(*github.ErrorResponse); ok && e.Response.StatusCode == http.StatusNotFound {
 					continue
 				} else if err != nil {
-					return nil, nil, 0, fmt.Errorf("fetchCommit: %v", err)
+					return nil, nil, nil, 0, fmt.Errorf("fetchCommit: %v", err)
 				}
 				commits[*c.SHA] = rc
 			}
@@ -115,12 +119,25 @@ func (s *service) fetchEvents(ctx context.Context) (
 			if e, ok := err.(*github.ErrorResponse); ok && e.Response.StatusCode == http.StatusNotFound {
 				continue
 			} else if err != nil {
-				return nil, nil, 0, fmt.Errorf("fetchCommit: %v", err)
+				return nil, nil, nil, 0, fmt.Errorf("fetchCommit: %v", err)
 			}
 			commits[*p.Comment.CommitID] = rc
+
+		case *github.IssueCommentEvent:
+			if p.Issue.PullRequestLinks == nil {
+				continue
+			}
+			if _, ok := prs[*p.Issue.PullRequestLinks.URL]; ok {
+				continue
+			}
+			merged, err := s.fetchPullRequestMerged(ctx, *p.Issue.PullRequestLinks.URL)
+			if err != nil {
+				return nil, nil, nil, 0, fmt.Errorf("fetchPullRequestMerged: %v", err)
+			}
+			prs[*p.Issue.PullRequestLinks.URL] = merged
 		}
 	}
-	return events, commits, pollInterval, nil
+	return events, commits, prs, pollInterval, nil
 }
 
 // fetchCommit fetches the commit at the API URL.
@@ -137,12 +154,37 @@ func (s *service) fetchCommit(ctx context.Context, commitURL string) (*github.Re
 	return &commit, nil
 }
 
+// fetchPullRequestMerged fetches whether the Pull Request at the API URL is merged
+// at current time.
+func (s *service) fetchPullRequestMerged(ctx context.Context, prURL string) (bool, error) {
+	// https://developer.github.com/v3/pulls/#get-if-a-pull-request-has-been-merged.
+	req, err := s.cl.NewRequest("GET", prURL+"/merge", nil)
+	if err != nil {
+		return false, err
+	}
+	resp, err := s.cl.Do(ctx, req, nil)
+	switch e, ok := err.(*github.ErrorResponse); {
+	case err == nil && resp.StatusCode == http.StatusNoContent:
+		// PR merged.
+		return true, nil
+	case ok && e.Response.StatusCode == http.StatusNotFound:
+		// PR not merged.
+		return false, nil
+	case err != nil:
+		return false, err
+	default:
+		body, _ := ioutil.ReadAll(resp.Body)
+		return false, fmt.Errorf("unexpected status code: %v body: %q", resp.Status, body)
+	}
+}
+
 // convert converts GitHub events. commits key is SHA.
 // knownUser is a known user, whose email and avatar URL
 // can be used when full commit details are unavailable.
 func convert(
 	events []*github.Event,
 	commits map[string]*github.RepositoryCommit,
+	prs map[string]bool,
 	knownUser users.User,
 ) []event.Event {
 	var es []event.Event
@@ -208,10 +250,13 @@ func convert(
 			default: // Pull Request.
 				switch *p.Action {
 				case "created":
+					state := *p.Issue.State
+					if merged := prs[*p.Issue.PullRequestLinks.URL]; state == "closed" && merged {
+						state = "merged"
+					}
 					ee.Payload = event.PullRequestComment{
-						PullRequestTitle: *p.Issue.Title,
-						// TODO: Detect "merged" state somehow? It's likely going to require making an API call.
-						PullRequestState:     *p.Issue.State, // TODO: Verify "open", "closed"?
+						PullRequestTitle:     *p.Issue.Title,
+						PullRequestState:     state, // TODO: Verify "open", "closed", "merged"?
 						CommentBody:          *p.Comment.Body,
 						CommentUserAvatarURL: *p.Comment.User.AvatarURL,
 						CommentHTMLURL:       *p.Comment.HTMLURL,
