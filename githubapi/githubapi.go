@@ -96,7 +96,11 @@ func (s *service) fetchEvents(ctx context.Context) (
 	commits = make(map[string]*github.RepositoryCommit)
 	prs = make(map[string]bool)
 	for _, e := range events {
-		switch p := e.Payload().(type) {
+		payload, err := e.ParsePayload()
+		if err != nil {
+			return nil, nil, nil, 0, fmt.Errorf("fetchEvents: ParsePayload failed: %v", err)
+		}
+		switch p := payload.(type) {
 		case *github.PushEvent:
 			for _, c := range p.Commits {
 				if _, ok := commits[*c.SHA]; ok {
@@ -178,7 +182,8 @@ func (s *service) fetchPullRequestMerged(ctx context.Context, prURL string) (boo
 	}
 }
 
-// convert converts GitHub events. commits key is SHA.
+// convert converts GitHub events. Events must contain valid payloads,
+// otherwise convert panics. commits key is SHA.
 // knownUser is a known user, whose email and avatar URL
 // can be used when full commit details are unavailable.
 func convert(
@@ -198,7 +203,11 @@ func convert(
 			Container: "github.com/" + *e.Repo.Name,
 		}
 
-		switch p := e.Payload().(type) {
+		payload, err := e.ParsePayload()
+		if err != nil {
+			panic(fmt.Errorf("internal error: convert given a github.Event with in invalid payload: %v", err))
+		}
+		switch p := payload.(type) {
 		case *github.IssuesEvent:
 			switch *p.Action {
 			case "opened", "closed", "reopened":
