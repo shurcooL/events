@@ -322,6 +322,7 @@ func (c commitComment) CommitComment() event.CommitComment {
 // push is an on-disk representation of event.Push.
 type push struct {
 	Commits []commit
+	// TODO: Add other push event fields as needed.
 }
 
 func fromPush(p event.Push) push {

@@ -62,7 +62,13 @@ type CommitComment struct {
 
 // Push is a push event.
 type Push struct {
-	Commits []Commit
+	Branch  string   // Name of branch pushed to. E.g., "master".
+	Head    string   // SHA of the most recent commit after the push.
+	Before  string   // SHA of the most recent commit before the push.
+	Commits []Commit // Ordered from earliest to most recent (head).
+
+	HeadHTMLURL   string // Optional.
+	BeforeHTMLURL string // Optional.
 }
 
 // Star is a star event.

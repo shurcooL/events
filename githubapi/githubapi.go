@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -361,7 +362,12 @@ func convert(
 			}
 
 			ee.Payload = event.Push{
-				Commits: cs,
+				Branch:        strings.TrimPrefix(*p.Ref, "refs/heads/"),
+				Head:          *p.Head,
+				Before:        *p.Before,
+				Commits:       cs,
+				HeadHTMLURL:   "https://github.com/" + *e.Repo.Name + "/commit/" + *p.Head,
+				BeforeHTMLURL: "https://github.com/" + *e.Repo.Name + "/commit/" + *p.Before,
 			}
 
 		case *github.WatchEvent:
