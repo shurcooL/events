@@ -198,8 +198,9 @@ func convert(
 		ee := event.Event{
 			Time: *e.CreatedAt,
 			Actor: users.User{
-				UserSpec: users.UserSpec{ID: uint64(*e.Actor.ID), Domain: "github.com"},
-				Login:    *e.Actor.Login,
+				UserSpec:  users.UserSpec{ID: uint64(*e.Actor.ID), Domain: "github.com"},
+				Login:     *e.Actor.Login,
+				AvatarURL: *e.Actor.AvatarURL,
 			},
 			Container: "github.com/" + *e.Repo.Name,
 		}
@@ -246,11 +247,10 @@ func convert(
 				switch *p.Action {
 				case "created":
 					ee.Payload = event.IssueComment{
-						IssueTitle:           *p.Issue.Title,
-						IssueState:           *p.Issue.State, // TODO: Verify "open", "closed"?
-						CommentBody:          *p.Comment.Body,
-						CommentUserAvatarURL: *p.Comment.User.AvatarURL,
-						CommentHTMLURL:       *p.Comment.HTMLURL,
+						IssueTitle:     *p.Issue.Title,
+						IssueState:     *p.Issue.State, // TODO: Verify "open", "closed"?
+						CommentBody:    *p.Comment.Body,
+						CommentHTMLURL: *p.Comment.HTMLURL,
 					}
 
 					//default:
@@ -265,11 +265,10 @@ func convert(
 						state = "merged"
 					}
 					ee.Payload = event.PullRequestComment{
-						PullRequestTitle:     *p.Issue.Title,
-						PullRequestState:     state, // TODO: Verify "open", "closed", "merged"?
-						CommentBody:          *p.Comment.Body,
-						CommentUserAvatarURL: *p.Comment.User.AvatarURL,
-						CommentHTMLURL:       *p.Comment.HTMLURL,
+						PullRequestTitle: *p.Issue.Title,
+						PullRequestState: state, // TODO: Verify "open", "closed", "merged"?
+						CommentBody:      *p.Comment.Body,
+						CommentHTMLURL:   *p.Comment.HTMLURL,
 					}
 
 					//default:
@@ -294,11 +293,10 @@ func convert(
 				}
 
 				ee.Payload = event.PullRequestComment{
-					PullRequestTitle:     *p.PullRequest.Title,
-					PullRequestState:     state,
-					CommentBody:          *p.Comment.Body,
-					CommentUserAvatarURL: *p.Comment.User.AvatarURL,
-					CommentHTMLURL:       *p.Comment.HTMLURL,
+					PullRequestTitle: *p.PullRequest.Title,
+					PullRequestState: state,
+					CommentBody:      *p.Comment.Body,
+					CommentHTMLURL:   *p.Comment.HTMLURL,
 				}
 
 				//default:
@@ -322,9 +320,8 @@ func convert(
 			//	}
 			//}
 			ee.Payload = event.CommitComment{
-				Commit:               commit,
-				CommentBody:          *p.Comment.Body,
-				CommentUserAvatarURL: *p.Comment.User.AvatarURL,
+				Commit:      commit,
+				CommentBody: *p.Comment.Body,
 			}
 
 		case *github.PushEvent:
@@ -414,8 +411,7 @@ func convert(
 				})
 			}
 			ee.Payload = event.Gollum{
-				ActorAvatarURL: *e.Actor.AvatarURL,
-				Pages:          pages,
+				Pages: pages,
 			}
 		}
 

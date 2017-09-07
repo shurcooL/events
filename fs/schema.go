@@ -264,11 +264,10 @@ func (pr pullRequest) PullRequest() event.PullRequest {
 
 // issueComment is an on-disk representation of event.IssueComment.
 type issueComment struct {
-	IssueTitle           string
-	IssueState           string
-	CommentBody          string
-	CommentUserAvatarURL string
-	CommentHTMLURL       string
+	IssueTitle     string
+	IssueState     string
+	CommentBody    string
+	CommentHTMLURL string
 }
 
 func fromIssueComment(c event.IssueComment) issueComment {
@@ -281,11 +280,10 @@ func (c issueComment) IssueComment() event.IssueComment {
 
 // pullRequestComment is an on-disk representation of event.PullRequestComment.
 type pullRequestComment struct {
-	PullRequestTitle     string
-	PullRequestState     string
-	CommentBody          string
-	CommentUserAvatarURL string
-	CommentHTMLURL       string
+	PullRequestTitle string
+	PullRequestState string
+	CommentBody      string
+	CommentHTMLURL   string
 }
 
 func fromPullRequestComment(c event.PullRequestComment) pullRequestComment {
@@ -298,24 +296,21 @@ func (c pullRequestComment) PullRequestComment() event.PullRequestComment {
 
 // commitComment is an on-disk representation of event.CommitComment.
 type commitComment struct {
-	Commit               commit
-	CommentBody          string
-	CommentUserAvatarURL string
+	Commit      commit
+	CommentBody string
 }
 
 func fromCommitComment(c event.CommitComment) commitComment {
 	return commitComment{
-		Commit:               fromCommit(c.Commit),
-		CommentBody:          c.CommentBody,
-		CommentUserAvatarURL: c.CommentUserAvatarURL,
+		Commit:      fromCommit(c.Commit),
+		CommentBody: c.CommentBody,
 	}
 }
 
 func (c commitComment) CommitComment() event.CommitComment {
 	return event.CommitComment{
-		Commit:               c.Commit.Commit(),
-		CommentBody:          c.CommentBody,
-		CommentUserAvatarURL: c.CommentUserAvatarURL,
+		Commit:      c.Commit.Commit(),
+		CommentBody: c.CommentBody,
 	}
 }
 
@@ -400,8 +395,7 @@ func (d delete) Delete() event.Delete {
 
 // gollum is an on-disk representation of event.Gollum.
 type gollum struct {
-	ActorAvatarURL string
-	Pages          []page
+	Pages []page
 }
 
 func fromGollum(g event.Gollum) gollum {
@@ -410,8 +404,7 @@ func fromGollum(g event.Gollum) gollum {
 		pages = append(pages, fromPage(p))
 	}
 	return gollum{
-		ActorAvatarURL: g.ActorAvatarURL,
-		Pages:          pages,
+		Pages: pages,
 	}
 }
 
@@ -421,8 +414,7 @@ func (g gollum) Gollum() event.Gollum {
 		pages = append(pages, p.Page())
 	}
 	return event.Gollum{
-		ActorAvatarURL: g.ActorAvatarURL,
-		Pages:          pages,
+		Pages: pages,
 	}
 }
 

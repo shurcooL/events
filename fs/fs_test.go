@@ -56,11 +56,10 @@ var mockEvents = []event.Event{
 		Actor:     mockUser,
 		Container: "example.org/another-app",
 		Payload: event.IssueComment{
-			IssueTitle:           "feature request: \"recently read\" notifications tab",
-			IssueState:           "open",
-			CommentBody:          "I am going to work on this and implement it soon.\n\nI want to prototype a different visualization/design...",
-			CommentUserAvatarURL: "https://avatars0.githubusercontent.com/u/8566911?v=4&s=32",
-			CommentHTMLURL:       "https://example.org/another-app/issues/3#comment-2",
+			IssueTitle:     "feature request: \"recently read\" notifications tab",
+			IssueState:     "open",
+			CommentBody:    "I am going to work on this and implement it soon.\n\nI want to prototype a different visualization/design...",
+			CommentHTMLURL: "https://example.org/another-app/issues/3#comment-2",
 		},
 	},
 	{

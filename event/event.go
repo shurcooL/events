@@ -37,27 +37,24 @@ type PullRequest struct {
 
 // IssueComment is an issue comment event.
 type IssueComment struct {
-	IssueTitle           string
-	IssueState           string // "open", "closed".
-	CommentBody          string
-	CommentUserAvatarURL string // TODO: Can be replaced by Event.Actor.AvatarURL?
-	CommentHTMLURL       string
+	IssueTitle     string
+	IssueState     string // "open", "closed".
+	CommentBody    string
+	CommentHTMLURL string
 }
 
 // PullRequestComment is a pull request comment event.
 type PullRequestComment struct {
-	PullRequestTitle     string
-	PullRequestState     string // "open", "closed", "merged".
-	CommentBody          string
-	CommentUserAvatarURL string // TODO: Can be replaced by Event.Actor.AvatarURL?
-	CommentHTMLURL       string
+	PullRequestTitle string
+	PullRequestState string // "open", "closed", "merged".
+	CommentBody      string
+	CommentHTMLURL   string
 }
 
 // CommitComment is a commit comment event.
 type CommitComment struct {
-	Commit               Commit
-	CommentBody          string
-	CommentUserAvatarURL string // TODO: Can be replaced by Event.Actor.AvatarURL?
+	Commit      Commit
+	CommentBody string
 }
 
 // Push is a push event.
@@ -96,6 +93,5 @@ type Delete struct {
 //
 // TODO: Definitely rename this... either Wiki (specific), or Edit (general).
 type Gollum struct {
-	ActorAvatarURL string // Actor that acted on the pages. TODO: Can be replaced by Event.Actor.AvatarURL?
-	Pages          []Page // Wiki pages that are affected.
+	Pages []Page // Wiki pages that are affected.
 }
