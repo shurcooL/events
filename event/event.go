@@ -30,7 +30,7 @@ type Issue struct {
 //
 // THINK: Consider calling it Change? It should be generic enough to cover PRs, CLs, etc.
 type PullRequest struct {
-	Action             string // "opened", "closed", "merged".
+	Action             string // "opened", "closed", "merged", "reopened".
 	PullRequestTitle   string
 	PullRequestHTMLURL string
 }

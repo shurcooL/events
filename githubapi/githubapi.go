@@ -225,12 +225,14 @@ func convert(
 		case *github.PullRequestEvent:
 			var action string
 			switch {
-			case !*p.PullRequest.Merged && *p.PullRequest.State == "open":
+			case *p.Action == "opened":
 				action = "opened"
-			case !*p.PullRequest.Merged && *p.PullRequest.State == "closed":
+			case *p.Action == "closed" && !*p.PullRequest.Merged:
 				action = "closed"
-			case *p.PullRequest.Merged:
+			case *p.Action == "closed" && *p.PullRequest.Merged:
 				action = "merged"
+			case *p.Action == "reopened":
+				action = "reopened"
 
 				//default:
 				//log.Println("convert: unsupported *github.PullRequestEvent PullRequest.State:", *p.PullRequest.State, "PullRequest.Merged:", *p.PullRequest.Merged)
