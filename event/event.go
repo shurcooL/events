@@ -74,7 +74,7 @@ type Star struct{}
 // Create is a create event.
 type Create struct {
 	Type        string // "repository", "branch", "tag".
-	Name        string
+	Name        string // Only for "branch", "tag" types.
 	Description string // Only for "repository" type.
 }
 
