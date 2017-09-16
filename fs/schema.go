@@ -316,8 +316,12 @@ func (c commitComment) CommitComment() event.CommitComment {
 
 // push is an on-disk representation of event.Push.
 type push struct {
-	Commits []commit
-	// TODO: Add other push event fields as needed.
+	Branch        string
+	Head          string
+	Before        string
+	Commits       []commit
+	HeadHTMLURL   string `json:",omitempty"`
+	BeforeHTMLURL string `json:",omitempty"`
 }
 
 func fromPush(p event.Push) push {
@@ -326,7 +330,12 @@ func fromPush(p event.Push) push {
 		commits = append(commits, fromCommit(c))
 	}
 	return push{
-		Commits: commits,
+		Branch:        p.Branch,
+		Head:          p.Head,
+		Before:        p.Before,
+		Commits:       commits,
+		HeadHTMLURL:   p.HeadHTMLURL,
+		BeforeHTMLURL: p.BeforeHTMLURL,
 	}
 }
 
@@ -336,7 +345,12 @@ func (p push) Push() event.Push {
 		commits = append(commits, c.Commit())
 	}
 	return event.Push{
-		Commits: commits,
+		Branch:        p.Branch,
+		Head:          p.Head,
+		Before:        p.Before,
+		Commits:       commits,
+		HeadHTMLURL:   p.HeadHTMLURL,
+		BeforeHTMLURL: p.BeforeHTMLURL,
 	}
 }
 
