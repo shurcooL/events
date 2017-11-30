@@ -465,6 +465,8 @@ func (p page) Page() event.Page {
 }
 
 // user is an on-disk representation of users.User.
+// TODO: Consider storing user spec only, fetching user from users.Service,
+//       or better yet, using provided users.User?
 type user struct {
 	ID        uint64
 	Domain    string     `json:",omitempty"`
@@ -476,8 +478,8 @@ type user struct {
 	AvatarURL string `json:",omitempty"`
 	HTMLURL   string `json:",omitempty"`
 
-	CreatedAt time.Time `json:",omitempty"`
-	UpdatedAt time.Time `json:",omitempty"`
+	CreatedAt *time.Time `json:",omitempty"`
+	UpdatedAt *time.Time `json:",omitempty"`
 
 	SiteAdmin bool `json:",omitempty"`
 }
@@ -498,8 +500,8 @@ func fromUser(u users.User) user {
 		AvatarURL: u.AvatarURL,
 		HTMLURL:   u.HTMLURL,
 
-		CreatedAt: u.CreatedAt,
-		UpdatedAt: u.UpdatedAt,
+		CreatedAt: timePointer(u.CreatedAt),
+		UpdatedAt: timePointer(u.UpdatedAt),
 
 		SiteAdmin: u.SiteAdmin,
 	}
@@ -523,11 +525,25 @@ func (u user) User() users.User {
 		AvatarURL: u.AvatarURL,
 		HTMLURL:   u.HTMLURL,
 
-		CreatedAt: u.CreatedAt,
-		UpdatedAt: u.UpdatedAt,
+		CreatedAt: timeValue(u.CreatedAt),
+		UpdatedAt: timeValue(u.UpdatedAt),
 
 		SiteAdmin: u.SiteAdmin,
 	}
+}
+
+func timePointer(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
+func timeValue(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
 }
 
 // userSpec is an on-disk representation of users.UserSpec.
