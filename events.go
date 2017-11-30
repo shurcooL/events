@@ -18,6 +18,7 @@ type Service interface {
 // ExternalService for events.
 type ExternalService interface {
 	// Log logs the event.
+	// event.Time time zone must be UTC.
 	Log(ctx context.Context, event event.Event) error
 }
 

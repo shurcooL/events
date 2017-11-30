@@ -3,6 +3,7 @@ package githubapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -52,7 +53,11 @@ func (s *service) List(_ context.Context) ([]event.Event, error) {
 }
 
 // Log logs the event.
+// event.Time time zone must be UTC.
 func (s *service) Log(_ context.Context, event event.Event) error {
+	if event.Time.Location() != time.UTC {
+		return errors.New("event.Time time zone must be UTC")
+	}
 	// Nothing to do. GitHub takes care of this on their end, even when performing actions via API.
 	return nil
 }

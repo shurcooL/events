@@ -3,8 +3,10 @@ package fs
 
 import (
 	"context"
+	"errors"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/shurcooL/events"
 	"github.com/shurcooL/events/event"
@@ -64,7 +66,12 @@ func (s *service) List(_ context.Context) ([]event.Event, error) {
 }
 
 // Log logs the event.
+// event.Time time zone must be UTC.
 func (s *service) Log(ctx context.Context, event event.Event) error {
+	if event.Time.Location() != time.UTC {
+		return errors.New("event.Time time zone must be UTC")
+	}
+
 	if event.Actor.UserSpec != s.user {
 		// Skip other users.
 		return nil
