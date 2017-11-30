@@ -15,8 +15,8 @@ import (
 )
 
 // NewService creates a virtual filesystem-backed events.Service,
-// using root for storage.
-func NewService(root webdav.FileSystem, user users.UserSpec) (events.Service, error) {
+// using root for storage. It logs and fetches events only for the specified user.
+func NewService(root webdav.FileSystem, user users.User) (events.Service, error) {
 	s := &service{
 		fs:   root,
 		user: user,
@@ -30,7 +30,7 @@ func NewService(root webdav.FileSystem, user users.UserSpec) (events.Service, er
 
 type service struct {
 	fs   webdav.FileSystem
-	user users.UserSpec
+	user users.User
 
 	mu     sync.Mutex
 	ring   ring
@@ -38,18 +38,18 @@ type service struct {
 }
 
 func (s *service) load() error {
-	err := jsonDecodeFile(context.Background(), s.fs, ringPath(s.user), &s.ring)
+	err := jsonDecodeFile(context.Background(), s.fs, ringPath(s.user.UserSpec), &s.ring)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	for i := 0; i < s.ring.Length; i++ {
 		idx := s.ring.At(i)
 		var event eventDisk
-		err := jsonDecodeFile(context.Background(), s.fs, eventPath(s.user, idx), &event)
+		err := jsonDecodeFile(context.Background(), s.fs, eventPath(s.user.UserSpec, idx), &event)
 		if err != nil {
 			return err
 		}
-		s.events[idx] = event.Event()
+		s.events[idx] = event.Event(s.user)
 	}
 	return nil
 }
@@ -72,7 +72,7 @@ func (s *service) Log(ctx context.Context, event event.Event) error {
 		return errors.New("event.Time time zone must be UTC")
 	}
 
-	if event.Actor.UserSpec != s.user {
+	if event.Actor.UserSpec != s.user.UserSpec {
 		// Skip other users.
 		return nil
 	}
@@ -84,11 +84,11 @@ func (s *service) Log(ctx context.Context, event event.Event) error {
 
 	// Commit to storage first, returning error on failure.
 	// Write the event file, then write the ring file, so that partial failure is less bad.
-	err := jsonEncodeFile(ctx, s.fs, eventPath(s.user, idx), fromEvent(event))
+	err := jsonEncodeFile(ctx, s.fs, eventPath(s.user.UserSpec, idx), fromEvent(event))
 	if err != nil {
 		return err
 	}
-	err = jsonEncodeFile(ctx, s.fs, ringPath(s.user), ring)
+	err = jsonEncodeFile(ctx, s.fs, ringPath(s.user.UserSpec), ring)
 	if err != nil {
 		return err
 	}

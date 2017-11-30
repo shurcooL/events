@@ -20,7 +20,7 @@ import (
 )
 
 // NewService creates a GitHub-backed events.Service using given GitHub client.
-// It fetches the events for the specified user. user.Domain must be "github.com".
+// It fetches events only for the specified user. user.Domain must be "github.com".
 func NewService(client *github.Client, user users.User) (events.Service, error) {
 	if user.Domain != "github.com" {
 		return nil, fmt.Errorf(`user.Domain is %q, it must be "github.com"`, user.Domain)

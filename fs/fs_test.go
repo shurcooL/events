@@ -18,7 +18,7 @@ func Test(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := fs.NewService(mem, mockUser.UserSpec)
+	s, err := fs.NewService(mem, mockUser)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -65,9 +65,9 @@ func (r ring) Next() (ring ring, idx int) {
 }
 
 // eventDisk is an on-disk representation of event.Event.
+// Actor is omitted from struct because it's encoded as part of event file path.
 type eventDisk struct {
 	Time      time.Time
-	Actor     users.User
 	Container string
 	Payload   interface{}
 }
@@ -75,13 +75,11 @@ type eventDisk struct {
 func (e eventDisk) MarshalJSON() ([]byte, error) {
 	v := struct {
 		Time      time.Time
-		Actor     user
 		Container string
 		Type      string
 		Payload   interface{}
 	}{
 		Time:      e.Time,
-		Actor:     fromUser(e.Actor),
 		Container: e.Container,
 	}
 	switch p := e.Payload.(type) {
@@ -129,7 +127,6 @@ func (e *eventDisk) UnmarshalJSON(b []byte) error {
 	}
 	var v struct {
 		Time      time.Time
-		Actor     user
 		Container string
 		Type      string
 		Payload   json.RawMessage
@@ -140,7 +137,6 @@ func (e *eventDisk) UnmarshalJSON(b []byte) error {
 	}
 	*e = eventDisk{}
 	e.Time = v.Time
-	e.Actor = v.Actor.User()
 	e.Container = v.Container
 	switch v.Type {
 	case "issue":
@@ -225,11 +221,23 @@ func (e *eventDisk) UnmarshalJSON(b []byte) error {
 }
 
 func fromEvent(e event.Event) eventDisk {
-	return eventDisk(e)
+	return eventDisk{
+		Time: e.Time,
+		// Omit Actor because it's encoded as part of event file path.
+		Container: e.Container,
+		Payload:   e.Payload,
+	}
 }
 
-func (e eventDisk) Event() event.Event {
-	return event.Event(e)
+// Event converts eventDisk to event.Event, using actor
+// inferred from event file path.
+func (e eventDisk) Event(actor users.User) event.Event {
+	return event.Event{
+		Time:      e.Time,
+		Actor:     actor,
+		Container: e.Container,
+		Payload:   e.Payload,
+	}
 }
 
 // issue is an on-disk representation of event.Issue.
@@ -462,100 +470,4 @@ func fromPage(p event.Page) page {
 
 func (p page) Page() event.Page {
 	return event.Page(p)
-}
-
-// user is an on-disk representation of users.User.
-// TODO: Consider storing user spec only, fetching user from users.Service,
-//       or better yet, using provided users.User?
-type user struct {
-	ID        uint64
-	Domain    string     `json:",omitempty"`
-	Elsewhere []userSpec `json:",omitempty"`
-
-	Login     string
-	Name      string `json:",omitempty"`
-	Email     string `json:",omitempty"`
-	AvatarURL string `json:",omitempty"`
-	HTMLURL   string `json:",omitempty"`
-
-	CreatedAt *time.Time `json:",omitempty"`
-	UpdatedAt *time.Time `json:",omitempty"`
-
-	SiteAdmin bool `json:",omitempty"`
-}
-
-func fromUser(u users.User) user {
-	var elsewhere []userSpec
-	for _, us := range u.Elsewhere {
-		elsewhere = append(elsewhere, fromUserSpec(us))
-	}
-	return user{
-		ID:        u.ID,
-		Domain:    u.Domain,
-		Elsewhere: elsewhere,
-
-		Login:     u.Login,
-		Name:      u.Name,
-		Email:     u.Email,
-		AvatarURL: u.AvatarURL,
-		HTMLURL:   u.HTMLURL,
-
-		CreatedAt: timePointer(u.CreatedAt),
-		UpdatedAt: timePointer(u.UpdatedAt),
-
-		SiteAdmin: u.SiteAdmin,
-	}
-}
-
-func (u user) User() users.User {
-	var elsewhere []users.UserSpec
-	for _, us := range u.Elsewhere {
-		elsewhere = append(elsewhere, us.UserSpec())
-	}
-	return users.User{
-		UserSpec: users.UserSpec{
-			ID:     u.ID,
-			Domain: u.Domain,
-		},
-		Elsewhere: elsewhere,
-
-		Login:     u.Login,
-		Name:      u.Name,
-		Email:     u.Email,
-		AvatarURL: u.AvatarURL,
-		HTMLURL:   u.HTMLURL,
-
-		CreatedAt: timeValue(u.CreatedAt),
-		UpdatedAt: timeValue(u.UpdatedAt),
-
-		SiteAdmin: u.SiteAdmin,
-	}
-}
-
-func timePointer(t time.Time) *time.Time {
-	if t.IsZero() {
-		return nil
-	}
-	return &t
-}
-
-func timeValue(t *time.Time) time.Time {
-	if t == nil {
-		return time.Time{}
-	}
-	return *t
-}
-
-// userSpec is an on-disk representation of users.UserSpec.
-type userSpec struct {
-	ID     uint64
-	Domain string `json:",omitempty"`
-}
-
-func fromUserSpec(us users.UserSpec) userSpec {
-	return userSpec(us)
-}
-
-func (us userSpec) UserSpec() users.UserSpec {
-	return users.UserSpec(us)
 }
