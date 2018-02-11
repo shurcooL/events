@@ -14,7 +14,7 @@ type Event struct {
 	Container string     // URL of container without schema. E.g., "github.com/user/repo".
 
 	// Payload specifies the event type. It's one of:
-	// Issue, PullRequest, IssueComment, PullRequestComment, CommitComment,
+	// Issue, Change, IssueComment, ChangeComment, CommitComment,
 	// Push, Star, Create, Fork, Delete, Gollum.
 	Payload interface{}
 }
@@ -26,13 +26,11 @@ type Issue struct {
 	IssueHTMLURL string
 }
 
-// PullRequest is a pull request event.
-//
-// THINK: Consider calling it Change? It should be generic enough to cover PRs, CLs, etc.
-type PullRequest struct {
-	Action             string // "opened", "closed", "merged", "reopened".
-	PullRequestTitle   string
-	PullRequestHTMLURL string
+// Change is a change event.
+type Change struct {
+	Action        string // "opened", "closed", "merged", "reopened".
+	ChangeTitle   string
+	ChangeHTMLURL string
 }
 
 // IssueComment is an issue comment event.
@@ -43,12 +41,12 @@ type IssueComment struct {
 	CommentHTMLURL string
 }
 
-// PullRequestComment is a pull request comment event.
-type PullRequestComment struct {
-	PullRequestTitle string
-	PullRequestState string // "open", "closed", "merged".
-	CommentBody      string
-	CommentHTMLURL   string
+// ChangeComment is a change comment event.
+type ChangeComment struct {
+	ChangeTitle    string
+	ChangeState    string // "open", "closed", "merged".
+	CommentBody    string
+	CommentHTMLURL string
 }
 
 // CommitComment is a commit comment event.

@@ -242,10 +242,10 @@ func convert(
 				//default:
 				//log.Println("convert: unsupported *github.PullRequestEvent PullRequest.State:", *p.PullRequest.State, "PullRequest.Merged:", *p.PullRequest.Merged)
 			}
-			ee.Payload = event.PullRequest{
-				Action:             action,
-				PullRequestTitle:   *p.PullRequest.Title,
-				PullRequestHTMLURL: *p.PullRequest.HTMLURL,
+			ee.Payload = event.Change{
+				Action:        action,
+				ChangeTitle:   *p.PullRequest.Title,
+				ChangeHTMLURL: *p.PullRequest.HTMLURL,
 			}
 
 		case *github.IssueCommentEvent:
@@ -271,11 +271,11 @@ func convert(
 					if merged := prs[*p.Issue.PullRequestLinks.URL]; state == "closed" && merged {
 						state = "merged"
 					}
-					ee.Payload = event.PullRequestComment{
-						PullRequestTitle: *p.Issue.Title,
-						PullRequestState: state, // TODO: Verify "open", "closed", "merged"?
-						CommentBody:      *p.Comment.Body,
-						CommentHTMLURL:   *p.Comment.HTMLURL,
+					ee.Payload = event.ChangeComment{
+						ChangeTitle:    *p.Issue.Title,
+						ChangeState:    state, // TODO: Verify "open", "closed", "merged"?
+						CommentBody:    *p.Comment.Body,
+						CommentHTMLURL: *p.Comment.HTMLURL,
 					}
 
 					//default:
@@ -299,11 +299,11 @@ func convert(
 					//log.Println("convert: unsupported *github.PullRequestReviewCommentEvent PullRequest.State:", *p.PullRequest.State)
 				}
 
-				ee.Payload = event.PullRequestComment{
-					PullRequestTitle: *p.PullRequest.Title,
-					PullRequestState: state,
-					CommentBody:      *p.Comment.Body,
-					CommentHTMLURL:   *p.Comment.HTMLURL,
+				ee.Payload = event.ChangeComment{
+					ChangeTitle:    *p.PullRequest.Title,
+					ChangeState:    state,
+					CommentBody:    *p.Comment.Body,
+					CommentHTMLURL: *p.Comment.HTMLURL,
 				}
 
 				//default:

@@ -86,15 +86,15 @@ func (e eventDisk) MarshalJSON() ([]byte, error) {
 	case event.Issue:
 		v.Type = "issue"
 		v.Payload = fromIssue(p)
-	case event.PullRequest:
-		v.Type = "pullRequest"
-		v.Payload = fromPullRequest(p)
+	case event.Change:
+		v.Type = "change"
+		v.Payload = fromChange(p)
 	case event.IssueComment:
 		v.Type = "issueComment"
 		v.Payload = fromIssueComment(p)
-	case event.PullRequestComment:
-		v.Type = "pullRequestComment"
-		v.Payload = fromPullRequestComment(p)
+	case event.ChangeComment:
+		v.Type = "changeComment"
+		v.Payload = fromChangeComment(p)
 	case event.CommitComment:
 		v.Type = "commitComment"
 		v.Payload = fromCommitComment(p)
@@ -146,13 +146,13 @@ func (e *eventDisk) UnmarshalJSON(b []byte) error {
 			return err
 		}
 		e.Payload = p.Issue()
-	case "pullRequest":
-		var p pullRequest
+	case "change":
+		var p change
 		err := json.Unmarshal(v.Payload, &p)
 		if err != nil {
 			return err
 		}
-		e.Payload = p.PullRequest()
+		e.Payload = p.Change()
 	case "issueComment":
 		var p issueComment
 		err := json.Unmarshal(v.Payload, &p)
@@ -160,13 +160,13 @@ func (e *eventDisk) UnmarshalJSON(b []byte) error {
 			return err
 		}
 		e.Payload = p.IssueComment()
-	case "pullRequestComment":
-		var p pullRequestComment
+	case "changeComment":
+		var p changeComment
 		err := json.Unmarshal(v.Payload, &p)
 		if err != nil {
 			return err
 		}
-		e.Payload = p.PullRequestComment()
+		e.Payload = p.ChangeComment()
 	case "commitComment":
 		var p commitComment
 		err := json.Unmarshal(v.Payload, &p)
@@ -255,19 +255,19 @@ func (i issue) Issue() event.Issue {
 	return event.Issue(i)
 }
 
-// pullRequest is an on-disk representation of event.PullRequest.
-type pullRequest struct {
-	Action             string
-	PullRequestTitle   string
-	PullRequestHTMLURL string
+// change is an on-disk representation of event.Change.
+type change struct {
+	Action        string
+	ChangeTitle   string
+	ChangeHTMLURL string
 }
 
-func fromPullRequest(pr event.PullRequest) pullRequest {
-	return pullRequest(pr)
+func fromChange(c event.Change) change {
+	return change(c)
 }
 
-func (pr pullRequest) PullRequest() event.PullRequest {
-	return event.PullRequest(pr)
+func (c change) Change() event.Change {
+	return event.Change(c)
 }
 
 // issueComment is an on-disk representation of event.IssueComment.
@@ -286,20 +286,20 @@ func (c issueComment) IssueComment() event.IssueComment {
 	return event.IssueComment(c)
 }
 
-// pullRequestComment is an on-disk representation of event.PullRequestComment.
-type pullRequestComment struct {
-	PullRequestTitle string
-	PullRequestState string
-	CommentBody      string
-	CommentHTMLURL   string
+// changeComment is an on-disk representation of event.ChangeComment.
+type changeComment struct {
+	ChangeTitle    string
+	ChangeState    string
+	CommentBody    string
+	CommentHTMLURL string
 }
 
-func fromPullRequestComment(c event.PullRequestComment) pullRequestComment {
-	return pullRequestComment(c)
+func fromChangeComment(c event.ChangeComment) changeComment {
+	return changeComment(c)
 }
 
-func (c pullRequestComment) PullRequestComment() event.PullRequestComment {
-	return event.PullRequestComment(c)
+func (c changeComment) ChangeComment() event.ChangeComment {
+	return event.ChangeComment(c)
 }
 
 // commitComment is an on-disk representation of event.CommitComment.
