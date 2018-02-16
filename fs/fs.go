@@ -16,10 +16,11 @@ import (
 
 // NewService creates a virtual filesystem-backed events.Service,
 // using root for storage. It logs and fetches events only for the specified user.
-func NewService(root webdav.FileSystem, user users.User) (events.Service, error) {
+func NewService(root webdav.FileSystem, user users.User, users users.Service) (events.Service, error) {
 	s := &service{
-		fs:   root,
-		user: user,
+		fs:    root,
+		user:  user,
+		users: users,
 	}
 	err := s.load()
 	if err != nil {
@@ -29,8 +30,9 @@ func NewService(root webdav.FileSystem, user users.User) (events.Service, error)
 }
 
 type service struct {
-	fs   webdav.FileSystem
-	user users.User
+	fs    webdav.FileSystem
+	user  users.User
+	users users.Service
 
 	mu     sync.Mutex
 	ring   ring
@@ -77,6 +79,14 @@ func (s *service) Log(ctx context.Context, event event.Event) error {
 		return nil
 	}
 
+	authenticatedSpec, err := s.users.GetAuthenticatedSpec(ctx)
+	if err != nil {
+		return err
+	}
+	if authenticatedSpec != s.user.UserSpec {
+		return os.ErrPermission
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -84,7 +94,7 @@ func (s *service) Log(ctx context.Context, event event.Event) error {
 
 	// Commit to storage first, returning error on failure.
 	// Write the event file, then write the ring file, so that partial failure is less bad.
-	err := jsonEncodeFile(ctx, s.fs, eventPath(s.user.UserSpec, idx), fromEvent(event))
+	err = jsonEncodeFile(ctx, s.fs, eventPath(s.user.UserSpec, idx), fromEvent(event))
 	if err != nil {
 		return err
 	}

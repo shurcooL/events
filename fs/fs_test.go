@@ -2,6 +2,8 @@ package fs_test
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -18,7 +20,8 @@ func Test(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s, err := fs.NewService(mem, mockUser)
+	usersService := &mockUsers{Current: mockUser.UserSpec}
+	s, err := fs.NewService(mem, mockUser, usersService)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,6 +31,13 @@ func Test(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	}
+
+	// Different user shouldn't be able to log.
+	usersService.Current = users.UserSpec{ID: 2, Domain: "example.org"}
+	logAsAnotherUserError := s.Log(context.Background(), mockEvents[0])
+	if got, want := logAsAnotherUserError, os.ErrPermission; got != want {
+		t.Errorf("Log: got error: %v, want: %v", got, want)
 	}
 
 	got, err := s.List(context.Background())
@@ -75,4 +85,45 @@ var mockUser = users.User{
 	Name:      "Sample Gopher",
 	Email:     "gopher@example.org",
 	AvatarURL: "https://avatars0.githubusercontent.com/u/8566911?v=4&s=32",
+}
+
+type mockUsers struct {
+	Current users.UserSpec
+	users.Service
+}
+
+func (mockUsers) Get(_ context.Context, user users.UserSpec) (users.User, error) {
+	switch {
+	case user == users.UserSpec{ID: 1, Domain: "example.org"}:
+		return users.User{
+			UserSpec: user,
+			Login:    "gopher1",
+			Name:     "Gopher One",
+			Email:    "gopher1@example.org",
+		}, nil
+	case user == users.UserSpec{ID: 2, Domain: "example.org"}:
+		return users.User{
+			UserSpec: user,
+			Login:    "gopher2",
+			Name:     "Gopher Two",
+			Email:    "gopher2@example.org",
+		}, nil
+	default:
+		return users.User{}, fmt.Errorf("user %v not found", user)
+	}
+}
+
+func (m mockUsers) GetAuthenticatedSpec(context.Context) (users.UserSpec, error) {
+	return m.Current, nil
+}
+
+func (m mockUsers) GetAuthenticated(ctx context.Context) (users.User, error) {
+	userSpec, err := m.GetAuthenticatedSpec(ctx)
+	if err != nil {
+		return users.User{}, err
+	}
+	if userSpec.ID == 0 {
+		return users.User{}, nil
+	}
+	return m.Get(ctx, userSpec)
 }
