@@ -113,9 +113,9 @@ func (e eventDisk) MarshalJSON() ([]byte, error) {
 	case event.Delete:
 		v.Type = "delete"
 		v.Payload = fromDelete(p)
-	case event.Gollum:
-		v.Type = "gollum"
-		v.Payload = fromGollum(p)
+	case event.Wiki:
+		v.Type = "wiki"
+		v.Payload = fromWiki(p)
 	}
 	return json.Marshal(v)
 }
@@ -209,13 +209,13 @@ func (e *eventDisk) UnmarshalJSON(b []byte) error {
 			return err
 		}
 		e.Payload = p.Delete()
-	case "gollum":
-		var p gollum
+	case "wiki":
+		var p wiki
 		err := json.Unmarshal(v.Payload, &p)
 		if err != nil {
 			return err
 		}
-		e.Payload = p.Gollum()
+		e.Payload = p.Wiki()
 	}
 	return nil
 }
@@ -415,27 +415,27 @@ func (d delete) Delete() event.Delete {
 	return event.Delete(d)
 }
 
-// gollum is an on-disk representation of event.Gollum.
-type gollum struct {
+// wiki is an on-disk representation of event.Wiki.
+type wiki struct {
 	Pages []page
 }
 
-func fromGollum(g event.Gollum) gollum {
+func fromWiki(w event.Wiki) wiki {
 	var pages []page
-	for _, p := range g.Pages {
+	for _, p := range w.Pages {
 		pages = append(pages, fromPage(p))
 	}
-	return gollum{
+	return wiki{
 		Pages: pages,
 	}
 }
 
-func (g gollum) Gollum() event.Gollum {
+func (w wiki) Wiki() event.Wiki {
 	var pages []event.Page
-	for _, p := range g.Pages {
+	for _, p := range w.Pages {
 		pages = append(pages, p.Page())
 	}
-	return event.Gollum{
+	return event.Wiki{
 		Pages: pages,
 	}
 }
@@ -456,11 +456,12 @@ func (c commit) Commit() event.Commit {
 	return event.Commit(c)
 }
 
-// page is an on-disk representation of  event.Page.
+// page is an on-disk representation of event.Page.
 type page struct {
 	Action         string
+	SHA            string
 	Title          string
-	PageHTMLURL    string
+	HTMLURL        string
 	CompareHTMLURL string
 }
 

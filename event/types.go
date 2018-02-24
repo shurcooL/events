@@ -1,6 +1,6 @@
 package event
 
-// Commit describes a commit in an event.
+// Commit describes a commit in a CommitComment or Push event.
 type Commit struct {
 	SHA             string
 	CommitMessage   string
@@ -8,10 +8,11 @@ type Commit struct {
 	HTMLURL         string // Optional.
 }
 
-// Page describes an edit of a Wiki page in an event.
+// Page describes a page action in a Wiki event.
 type Page struct {
-	Action         string
+	Action         string // "created", "edited".
+	SHA            string
 	Title          string
-	PageHTMLURL    string
+	HTMLURL        string
 	CompareHTMLURL string
 }

@@ -423,12 +423,13 @@ func convert(
 			for _, p := range p.Pages {
 				pages = append(pages, event.Page{
 					Action:         *p.Action,
+					SHA:            *p.SHA,
 					Title:          *p.Title,
-					PageHTMLURL:    *p.HTMLURL,
+					HTMLURL:        *p.HTMLURL + "/" + *p.SHA,
 					CompareHTMLURL: *p.HTMLURL + "/_compare/" + *p.SHA + "^..." + *p.SHA,
 				})
 			}
-			ee.Payload = event.Gollum{
+			ee.Payload = event.Wiki{
 				Pages: pages,
 			}
 		}

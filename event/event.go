@@ -15,7 +15,7 @@ type Event struct {
 
 	// Payload specifies the event type. It's one of:
 	// Issue, Change, IssueComment, ChangeComment, CommitComment,
-	// Push, Star, Create, Fork, Delete, Gollum.
+	// Push, Star, Create, Fork, Delete, Wiki.
 	Payload interface{}
 }
 
@@ -87,9 +87,7 @@ type Delete struct {
 	Name string
 }
 
-// Gollum is a Wiki edit event.
-//
-// TODO: Definitely rename this... either Wiki (specific), or Edit (general).
-type Gollum struct {
+// Wiki is a wiki event. It happens when an actor updates a wiki.
+type Wiki struct {
 	Pages []Page // Wiki pages that are affected.
 }
