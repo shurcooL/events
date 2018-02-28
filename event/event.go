@@ -4,6 +4,7 @@ package event
 import (
 	"time"
 
+	"dmitri.shuralyov.com/state"
 	"github.com/shurcooL/users"
 )
 
@@ -36,7 +37,7 @@ type Change struct {
 // IssueComment is an issue comment event.
 type IssueComment struct {
 	IssueTitle     string
-	IssueState     string // "open", "closed".
+	IssueState     state.Issue
 	CommentBody    string
 	CommentHTMLURL string
 }
@@ -44,7 +45,7 @@ type IssueComment struct {
 // ChangeComment is a change comment event.
 type ChangeComment struct {
 	ChangeTitle    string
-	ChangeState    string // "open", "closed", "merged".
+	ChangeState    state.Change
 	CommentBody    string
 	CommentHTMLURL string
 }

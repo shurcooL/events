@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"dmitri.shuralyov.com/route/github"
+	"dmitri.shuralyov.com/state"
 	githubV3 "github.com/google/go-github/github"
 	"github.com/shurcooL/events"
 	"github.com/shurcooL/events/event"
@@ -264,9 +265,19 @@ func convert(
 			case nil: // Issue.
 				switch *p.Action {
 				case "created":
+					var issueState state.Issue
+					switch *p.Issue.State {
+					case "open":
+						issueState = state.IssueOpen
+					case "closed":
+						issueState = state.IssueClosed
+					default:
+						log.Printf("convert: unsupported *githubV3.IssueCommentEvent (issue): Issue.State=%v\n", *p.Issue.State)
+						continue
+					}
 					ee.Payload = event.IssueComment{
 						IssueTitle:     *p.Issue.Title,
-						IssueState:     *p.Issue.State, // TODO: Verify "open", "closed"?
+						IssueState:     issueState,
 						CommentBody:    *p.Comment.Body,
 						CommentHTMLURL: router.IssueURL(ctx, owner, repo, uint64(*p.Issue.Number), uint64(*p.Comment.ID)),
 					}
@@ -278,13 +289,23 @@ func convert(
 			default: // Pull Request.
 				switch *p.Action {
 				case "created":
-					state := *p.Issue.State
-					if merged := prs[*p.Issue.PullRequestLinks.URL]; state == "closed" && merged {
-						state = "merged"
+					var changeState state.Change
+					// Note, State is PR state at the time of event, but merged is PR merged at current time.
+					// So, only check merged when State is closed. It's an approximation, but good enough in majority of cases.
+					switch merged := prs[*p.Issue.PullRequestLinks.URL]; {
+					case *p.Issue.State == "open":
+						changeState = state.ChangeOpen
+					case *p.Issue.State == "closed" && !merged:
+						changeState = state.ChangeClosed
+					case *p.Issue.State == "closed" && merged:
+						changeState = state.ChangeMerged
+					default:
+						log.Printf("convert: unsupported *githubV3.IssueCommentEvent (pr): merged=%v Issue.State=%v\n", prs[*p.Issue.PullRequestLinks.URL], *p.Issue.State)
+						continue
 					}
 					ee.Payload = event.ChangeComment{
 						ChangeTitle:    *p.Issue.Title,
-						ChangeState:    state, // TODO: Verify "open", "closed", "merged"?
+						ChangeState:    changeState,
 						CommentBody:    *p.Comment.Body,
 						CommentHTMLURL: router.PullRequestURL(ctx, owner, repo, uint64(*p.Issue.Number), uint64(*p.Comment.ID)),
 					}
@@ -297,22 +318,21 @@ func convert(
 		case *githubV3.PullRequestReviewCommentEvent:
 			switch *p.Action {
 			case "created":
-				var state string
+				var changeState state.Change
 				switch {
 				case p.PullRequest.MergedAt == nil && *p.PullRequest.State == "open":
-					state = "open"
+					changeState = state.ChangeOpen
 				case p.PullRequest.MergedAt == nil && *p.PullRequest.State == "closed":
-					state = "closed"
+					changeState = state.ChangeClosed
 				case p.PullRequest.MergedAt != nil:
-					state = "merged"
-
-					//default:
-					//log.Println("convert: unsupported *githubV3.PullRequestReviewCommentEvent PullRequest.State:", *p.PullRequest.State)
+					changeState = state.ChangeMerged
+				default:
+					log.Printf("convert: unsupported *githubV3.PullRequestReviewCommentEvent: PullRequest.MergedAt=%v PullRequest.State=%v\n", p.PullRequest.MergedAt, *p.PullRequest.State)
+					continue
 				}
-
 				ee.Payload = event.ChangeComment{
 					ChangeTitle:    *p.PullRequest.Title,
-					ChangeState:    state,
+					ChangeState:    changeState,
 					CommentBody:    *p.Comment.Body,
 					CommentHTMLURL: router.PullRequestURL(ctx, owner, repo, uint64(*p.PullRequest.Number), uint64(*p.Comment.ID)),
 				}
@@ -326,7 +346,7 @@ func convert(
 			if c := commits[*p.Comment.CommitID]; c != nil {
 				commit = event.Commit{
 					SHA:             *c.SHA,
-					CommitMessage:   *c.Commit.Message,
+					Message:         *c.Commit.Message,
 					AuthorAvatarURL: *c.Author.AvatarURL,
 					HTMLURL:         *c.HTMLURL,
 				}
@@ -353,7 +373,7 @@ func convert(
 					}
 					cs = append(cs, event.Commit{
 						SHA:             *c.SHA,
-						CommitMessage:   *c.Message,
+						Message:         *c.Message,
 						AuthorAvatarURL: avatarURL,
 					})
 					continue
@@ -362,7 +382,7 @@ func convert(
 					// Commit does not have a GitHub user associated.
 					cs = append(cs, event.Commit{
 						SHA:             *c.SHA,
-						CommitMessage:   *c.Message,
+						Message:         *c.Message,
 						AuthorAvatarURL: "https://secure.gravatar.com/avatar?d=mm&f=y&s=96",
 						HTMLURL:         *commit.HTMLURL,
 					})
@@ -370,7 +390,7 @@ func convert(
 				}
 				cs = append(cs, event.Commit{
 					SHA:             *c.SHA,
-					CommitMessage:   *c.Message,
+					Message:         *c.Message,
 					AuthorAvatarURL: *commit.Author.AvatarURL,
 					HTMLURL:         *commit.HTMLURL,
 				})

@@ -6,6 +6,7 @@ import (
 	"path"
 	"time"
 
+	"dmitri.shuralyov.com/state"
 	"github.com/shurcooL/events/event"
 	"github.com/shurcooL/users"
 )
@@ -279,11 +280,35 @@ type issueComment struct {
 }
 
 func fromIssueComment(c event.IssueComment) issueComment {
-	return issueComment(c)
+	var issueState string
+	switch c.IssueState {
+	case state.IssueOpen:
+		issueState = "open"
+	case state.IssueClosed:
+		issueState = "closed"
+	}
+	return issueComment{
+		IssueTitle:     c.IssueTitle,
+		IssueState:     issueState,
+		CommentBody:    c.CommentBody,
+		CommentHTMLURL: c.CommentHTMLURL,
+	}
 }
 
 func (c issueComment) IssueComment() event.IssueComment {
-	return event.IssueComment(c)
+	var issueState state.Issue
+	switch c.IssueState {
+	case "open":
+		issueState = state.IssueOpen
+	case "closed":
+		issueState = state.IssueClosed
+	}
+	return event.IssueComment{
+		IssueTitle:     c.IssueTitle,
+		IssueState:     issueState,
+		CommentBody:    c.CommentBody,
+		CommentHTMLURL: c.CommentHTMLURL,
+	}
 }
 
 // changeComment is an on-disk representation of event.ChangeComment.
@@ -295,11 +320,39 @@ type changeComment struct {
 }
 
 func fromChangeComment(c event.ChangeComment) changeComment {
-	return changeComment(c)
+	var changeState string
+	switch c.ChangeState {
+	case state.ChangeOpen:
+		changeState = "open"
+	case state.ChangeClosed:
+		changeState = "closed"
+	case state.ChangeMerged:
+		changeState = "merged"
+	}
+	return changeComment{
+		ChangeTitle:    c.ChangeTitle,
+		ChangeState:    changeState,
+		CommentBody:    c.CommentBody,
+		CommentHTMLURL: c.CommentHTMLURL,
+	}
 }
 
 func (c changeComment) ChangeComment() event.ChangeComment {
-	return event.ChangeComment(c)
+	var changeState state.Change
+	switch c.ChangeState {
+	case "open":
+		changeState = state.ChangeOpen
+	case "closed":
+		changeState = state.ChangeClosed
+	case "merged":
+		changeState = state.ChangeMerged
+	}
+	return event.ChangeComment{
+		ChangeTitle:    c.ChangeTitle,
+		ChangeState:    changeState,
+		CommentBody:    c.CommentBody,
+		CommentHTMLURL: c.CommentHTMLURL,
+	}
 }
 
 // commitComment is an on-disk representation of event.CommitComment.
@@ -443,7 +496,7 @@ func (w wiki) Wiki() event.Wiki {
 // commit is an on-disk representation of event.Commit.
 type commit struct {
 	SHA             string
-	CommitMessage   string
+	Message         string `json:"CommitMessage"`
 	AuthorAvatarURL string
 	HTMLURL         string `json:",omitempty"`
 }

@@ -3,7 +3,7 @@ package event
 // Commit describes a commit in a CommitComment or Push event.
 type Commit struct {
 	SHA             string
-	CommitMessage   string
+	Message         string
 	AuthorAvatarURL string
 	HTMLURL         string // Optional.
 }
