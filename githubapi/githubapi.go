@@ -35,10 +35,11 @@ func NewService(clientV3 *githubV3.Client, clientV4 *githubql.Client, user users
 		router = github.DotCom{}
 	}
 	s := &service{
-		clV3: clientV3,
-		clV4: clientV4,
-		user: user,
-		rtr:  router,
+		clV3:    clientV3,
+		clV4:    clientV4,
+		user:    user,
+		rtr:     router,
+		commits: make(map[string]event.Commit),
 	}
 	go s.poll()
 	return s, nil
@@ -52,7 +53,7 @@ type service struct {
 
 	mu         sync.Mutex
 	events     []*githubV3.Event
-	commits    map[string]event.Commit // SHA -> Commit.
+	commits    map[string]event.Commit // Not nil. SHA -> Commit.
 	prs        map[string]bool         // PR API URL -> Pull Request merged.
 	fetchError error
 }
@@ -77,7 +78,10 @@ func (s *service) Log(_ context.Context, event event.Event) error {
 
 func (s *service) poll() {
 	for {
-		events, commits, prs, pollInterval, fetchError := s.fetchEvents(context.Background())
+		s.mu.Lock()
+		commits := s.commits
+		s.mu.Unlock()
+		events, commits, prs, pollInterval, fetchError := s.fetchEvents(context.Background(), commits)
 		if fetchError != nil {
 			log.Println("fetchEvents:", fetchError)
 		}
@@ -96,9 +100,14 @@ func (s *service) poll() {
 }
 
 // fetchEvents fetches events, as well as mentioned commits and PRs from GitHub.
-func (s *service) fetchEvents(ctx context.Context) (
-	events []*githubV3.Event,
+// Provided commits must be non-nil, and it's used as a starting point.
+// Only missing commits are fetched, and unused commits are removed at the end.
+func (s *service) fetchEvents(
+	ctx context.Context,
 	commits map[string]event.Commit,
+) (
+	events []*githubV3.Event,
+	_ map[string]event.Commit,
 	prs map[string]bool,
 	pollInterval time.Duration,
 	err error,
@@ -112,8 +121,8 @@ func (s *service) fetchEvents(ctx context.Context) (
 	if pi, err := strconv.Atoi(resp.Header.Get("X-Poll-Interval")); err == nil {
 		pollInterval = time.Duration(pi) * time.Second
 	}
-	commits = make(map[string]event.Commit)
 	prs = make(map[string]bool)
+	used := make(map[string]bool) // A set of used commit SHAs.
 	for _, e := range events {
 		payload, err := e.ParsePayload()
 		if err != nil {
@@ -122,6 +131,7 @@ func (s *service) fetchEvents(ctx context.Context) (
 		switch p := payload.(type) {
 		case *githubV3.PushEvent:
 			for _, c := range p.Commits {
+				used[*c.SHA] = true
 				if _, ok := commits[*c.SHA]; ok {
 					continue
 				}
@@ -144,6 +154,7 @@ func (s *service) fetchEvents(ctx context.Context) (
 				commits[*c.SHA] = commit
 			}
 		case *githubV3.CommitCommentEvent:
+			used[*p.Comment.CommitID] = true
 			if _, ok := commits[*p.Comment.CommitID]; ok {
 				continue
 			}
@@ -172,6 +183,11 @@ func (s *service) fetchEvents(ctx context.Context) (
 				return nil, nil, nil, 0, fmt.Errorf("fetchPullRequestMerged: %v", err)
 			}
 			prs[*p.Issue.PullRequestLinks.URL] = merged
+		}
+	}
+	for sha := range commits {
+		if !used[sha] {
+			delete(commits, sha)
 		}
 	}
 	return events, commits, prs, pollInterval, nil
