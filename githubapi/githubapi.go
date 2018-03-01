@@ -3,6 +3,7 @@ package githubapi
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -18,6 +19,7 @@ import (
 	githubV3 "github.com/google/go-github/github"
 	"github.com/shurcooL/events"
 	"github.com/shurcooL/events/event"
+	"github.com/shurcooL/githubql"
 	"github.com/shurcooL/users"
 )
 
@@ -25,7 +27,7 @@ import (
 // It fetches events only for the specified user. user.Domain must be "github.com".
 //
 // If router is nil, github.DotCom router is used, which links to subjects on github.com.
-func NewService(client *githubV3.Client, user users.User, router github.Router) (events.Service, error) {
+func NewService(clientV3 *githubV3.Client, clientV4 *githubql.Client, user users.User, router github.Router) (events.Service, error) {
 	if user.Domain != "github.com" {
 		return nil, fmt.Errorf(`user.Domain is %q, it must be "github.com"`, user.Domain)
 	}
@@ -33,7 +35,8 @@ func NewService(client *githubV3.Client, user users.User, router github.Router) 
 		router = github.DotCom{}
 	}
 	s := &service{
-		cl:   client,
+		clV3: clientV3,
+		clV4: clientV4,
 		user: user,
 		rtr:  router,
 	}
@@ -42,14 +45,15 @@ func NewService(client *githubV3.Client, user users.User, router github.Router) 
 }
 
 type service struct {
-	cl   *githubV3.Client
+	clV3 *githubV3.Client // GitHub REST API v3 client.
+	clV4 *githubql.Client // GitHub GraphQL API v4 client.
 	user users.User
 	rtr  github.Router
 
 	mu         sync.Mutex
 	events     []*githubV3.Event
-	commits    map[string]*githubV3.RepositoryCommit // SHA -> Commit.
-	prs        map[string]bool                       // PR API URL -> Pull Request merged.
+	commits    map[string]event.Commit // SHA -> Commit.
+	prs        map[string]bool         // PR API URL -> Pull Request merged.
 	fetchError error
 }
 
@@ -58,7 +62,7 @@ func (s *service) List(ctx context.Context) ([]event.Event, error) {
 	s.mu.Lock()
 	events, commits, prs, fetchError := s.events, s.commits, s.prs, s.fetchError
 	s.mu.Unlock()
-	return convert(ctx, events, commits, prs, s.user, s.rtr), fetchError
+	return convert(ctx, events, commits, prs, s.rtr), fetchError
 }
 
 // Log logs the event.
@@ -94,21 +98,21 @@ func (s *service) poll() {
 // fetchEvents fetches events, as well as mentioned commits and PRs from GitHub.
 func (s *service) fetchEvents(ctx context.Context) (
 	events []*githubV3.Event,
-	commits map[string]*githubV3.RepositoryCommit,
+	commits map[string]event.Commit,
 	prs map[string]bool,
 	pollInterval time.Duration,
 	err error,
 ) {
 	// TODO: Investigate this:
 	//       Events support pagination, however the per_page option is unsupported. The fixed page size is 30 items. Fetching up to ten pages is supported, for a total of 300 events.
-	events, resp, err := s.cl.Activity.ListEventsPerformedByUser(ctx, s.user.Login, true, &githubV3.ListOptions{PerPage: 100})
+	events, resp, err := s.clV3.Activity.ListEventsPerformedByUser(ctx, s.user.Login, true, &githubV3.ListOptions{PerPage: 100})
 	if err != nil {
 		return nil, nil, nil, 0, err
 	}
 	if pi, err := strconv.Atoi(resp.Header.Get("X-Poll-Interval")); err == nil {
 		pollInterval = time.Duration(pi) * time.Second
 	}
-	commits = make(map[string]*githubV3.RepositoryCommit)
+	commits = make(map[string]event.Commit)
 	prs = make(map[string]bool)
 	for _, e := range events {
 		payload, err := e.ParsePayload()
@@ -121,26 +125,40 @@ func (s *service) fetchEvents(ctx context.Context) (
 				if _, ok := commits[*c.SHA]; ok {
 					continue
 				}
-				rc, err := s.fetchCommit(ctx, *c.URL)
-				if e, ok := err.(*githubV3.ErrorResponse); ok && e.Response.StatusCode == http.StatusNotFound {
-					continue
+				commit, err := s.fetchCommit(ctx, *e.Repo.ID, *c.SHA)
+				if err != nil && strings.HasPrefix(err.Error(), "Could not resolve to a node ") { // E.g., because the repo was deleted.
+					log.Printf("fetchEvents: commit %s@%s was not found: %v\n", *e.Repo.Name, *c.SHA, err)
+
+					avatarURL := "https://secure.gravatar.com/avatar?d=mm&f=y&s=96"
+					if *c.Author.Email == s.user.Email {
+						avatarURL = s.user.AvatarURL
+					}
+					commit = event.Commit{
+						SHA:             *c.SHA,
+						Message:         *c.Message,
+						AuthorAvatarURL: avatarURL,
+					}
 				} else if err != nil {
 					return nil, nil, nil, 0, fmt.Errorf("fetchCommit: %v", err)
 				}
-				commits[*c.SHA] = rc
+				commits[*c.SHA] = commit
 			}
 		case *githubV3.CommitCommentEvent:
 			if _, ok := commits[*p.Comment.CommitID]; ok {
 				continue
 			}
-			commitURL := *e.Repo.URL + "/commits/" + *p.Comment.CommitID // commitURL is "{repoURL}/commits/{commitID}".
-			rc, err := s.fetchCommit(ctx, commitURL)
-			if e, ok := err.(*githubV3.ErrorResponse); ok && e.Response.StatusCode == http.StatusNotFound {
-				continue
+			commit, err := s.fetchCommit(ctx, *e.Repo.ID, *p.Comment.CommitID)
+			if err != nil && strings.HasPrefix(err.Error(), "Could not resolve to a node ") { // E.g., because the repo was deleted.
+				log.Printf("fetchEvents: commit %s@%s was not found: %v\n", *e.Repo.Name, *p.Comment.CommitID, err)
+
+				commit = event.Commit{
+					SHA:             *p.Comment.CommitID,
+					AuthorAvatarURL: "https://secure.gravatar.com/avatar?d=mm&f=y&s=96",
+				}
 			} else if err != nil {
 				return nil, nil, nil, 0, fmt.Errorf("fetchCommit: %v", err)
 			}
-			commits[*p.Comment.CommitID] = rc
+			commits[*p.Comment.CommitID] = commit
 
 		case *githubV3.IssueCommentEvent:
 			if p.Issue.PullRequestLinks == nil {
@@ -159,29 +177,49 @@ func (s *service) fetchEvents(ctx context.Context) (
 	return events, commits, prs, pollInterval, nil
 }
 
-// fetchCommit fetches the commit at the API URL.
-func (s *service) fetchCommit(ctx context.Context, commitURL string) (*githubV3.RepositoryCommit, error) {
-	req, err := s.cl.NewRequest("GET", commitURL, nil)
-	if err != nil {
-		return nil, err
+// fetchCommit fetches the specified commit.
+func (s *service) fetchCommit(ctx context.Context, repoID int64, sha string) (event.Commit, error) {
+	// TODO: It'd be better to be able to batch and fetch all commits at once (in fetchEvents loop),
+	//       rather than making an individual query for each.
+	//       See https://github.com/shurcooL/githubql/issues/17.
+
+	commitID := fmt.Sprintf("06:Commit%d:%s", repoID, sha)
+	var q struct {
+		Node struct {
+			Commit struct {
+				OID     string
+				Message string
+				Author  struct {
+					AvatarURL string `graphql:"avatarUrl(size:96)"`
+				}
+				URL string
+			} `graphql:"...on Commit"`
+		} `graphql:"node(id:$commitID)"`
 	}
-	var commit githubV3.RepositoryCommit
-	_, err = s.cl.Do(ctx, req, &commit)
-	if err != nil {
-		return nil, err
+	variables := map[string]interface{}{
+		"commitID": githubql.ID(base64.StdEncoding.EncodeToString([]byte(commitID))), // HACK, TODO: Confirm StdEncoding vs URLEncoding.
 	}
-	return &commit, nil
+	err := s.clV4.Query(ctx, &q, variables)
+	if err != nil {
+		return event.Commit{}, err
+	}
+	return event.Commit{
+		SHA:             q.Node.Commit.OID,
+		Message:         q.Node.Commit.Message,
+		AuthorAvatarURL: q.Node.Commit.Author.AvatarURL,
+		HTMLURL:         q.Node.Commit.URL,
+	}, nil
 }
 
 // fetchPullRequestMerged fetches whether the Pull Request at the API URL is merged
 // at current time.
 func (s *service) fetchPullRequestMerged(ctx context.Context, prURL string) (bool, error) {
 	// https://developer.github.com/v3/pulls/#get-if-a-pull-request-has-been-merged.
-	req, err := s.cl.NewRequest("GET", prURL+"/merge", nil)
+	req, err := s.clV3.NewRequest("GET", prURL+"/merge", nil)
 	if err != nil {
 		return false, err
 	}
-	resp, err := s.cl.Do(ctx, req, nil)
+	resp, err := s.clV3.Do(ctx, req, nil)
 	switch e, ok := err.(*githubV3.ErrorResponse); {
 	case err == nil && resp.StatusCode == http.StatusNoContent:
 		// PR merged.
@@ -199,14 +237,11 @@ func (s *service) fetchPullRequestMerged(ctx context.Context, prURL string) (boo
 
 // convert converts GitHub events. Events must contain valid payloads,
 // otherwise convert panics. commits key is SHA.
-// knownUser is a known user, whose email and avatar URL
-// can be used when full commit details are unavailable.
 func convert(
 	ctx context.Context,
 	events []*githubV3.Event,
-	commits map[string]*githubV3.RepositoryCommit,
+	commits map[string]event.Commit,
 	prs map[string]bool,
-	knownUser users.User,
 	router github.Router,
 ) []event.Event {
 	var es []event.Event
@@ -342,60 +377,16 @@ func convert(
 				//e.Action = component.Text(fmt.Sprintf("%v on a pull request in", *p.Action))
 			}
 		case *githubV3.CommitCommentEvent:
-			var commit event.Commit
-			if c := commits[*p.Comment.CommitID]; c != nil {
-				commit = event.Commit{
-					SHA:             *c.SHA,
-					Message:         *c.Commit.Message,
-					AuthorAvatarURL: *c.Author.AvatarURL,
-					HTMLURL:         *c.HTMLURL,
-				}
-			}
-			// THINK: Is it worth to include partial information, if all we have is commit ID?
-			//} else {
-			//	commit = event.Commit{
-			//		SHA: *p.Comment.CommitID,
-			//	}
-			//}
 			ee.Payload = event.CommitComment{
-				Commit:      commit,
+				Commit:      commits[*p.Comment.CommitID],
 				CommentBody: *p.Comment.Body,
 			}
 
 		case *githubV3.PushEvent:
 			var cs []event.Commit
 			for _, c := range p.Commits {
-				commit := commits[*c.SHA]
-				if commit == nil {
-					avatarURL := "https://secure.gravatar.com/avatar?d=mm&f=y&s=96"
-					if *c.Author.Email == knownUser.Email {
-						avatarURL = knownUser.AvatarURL
-					}
-					cs = append(cs, event.Commit{
-						SHA:             *c.SHA,
-						Message:         *c.Message,
-						AuthorAvatarURL: avatarURL,
-					})
-					continue
-				}
-				if commit.Author == nil {
-					// Commit does not have a GitHub user associated.
-					cs = append(cs, event.Commit{
-						SHA:             *c.SHA,
-						Message:         *c.Message,
-						AuthorAvatarURL: "https://secure.gravatar.com/avatar?d=mm&f=y&s=96",
-						HTMLURL:         *commit.HTMLURL,
-					})
-					continue
-				}
-				cs = append(cs, event.Commit{
-					SHA:             *c.SHA,
-					Message:         *c.Message,
-					AuthorAvatarURL: *commit.Author.AvatarURL,
-					HTMLURL:         *commit.HTMLURL,
-				})
+				cs = append(cs, commits[*c.SHA])
 			}
-
 			ee.Payload = event.Push{
 				Branch:        strings.TrimPrefix(*p.Ref, "refs/heads/"),
 				Head:          *p.Head,
