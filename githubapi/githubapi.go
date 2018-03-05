@@ -461,6 +461,14 @@ func convert(
 			ee.Payload = event.Wiki{
 				Pages: pages,
 			}
+
+		case *githubV3.MemberEvent:
+			// Unsupported event type, skip it.
+			continue
+
+		default:
+			log.Printf("convert: unexpected event type: %T\n", p)
+			continue
 		}
 
 		es = append(es, ee)
