@@ -290,7 +290,7 @@ func convert(
 			ee.Payload = event.Issue{
 				Action:       *p.Action,
 				IssueTitle:   *p.Issue.Title,
-				IssueHTMLURL: router.IssueURL(ctx, owner, repo, uint64(*p.Issue.Number), 0),
+				IssueHTMLURL: router.IssueURL(ctx, owner, repo, uint64(*p.Issue.Number)),
 			}
 		case *githubV3.PullRequestEvent:
 			var action string
@@ -310,7 +310,7 @@ func convert(
 			ee.Payload = event.Change{
 				Action:        action,
 				ChangeTitle:   *p.PullRequest.Title,
-				ChangeHTMLURL: router.PullRequestURL(ctx, owner, repo, uint64(*p.PullRequest.Number), 0),
+				ChangeHTMLURL: router.PullRequestURL(ctx, owner, repo, uint64(*p.PullRequest.Number)),
 			}
 
 		case *githubV3.IssueCommentEvent:
@@ -332,7 +332,7 @@ func convert(
 						IssueTitle:     *p.Issue.Title,
 						IssueState:     issueState,
 						CommentBody:    *p.Comment.Body,
-						CommentHTMLURL: router.IssueURL(ctx, owner, repo, uint64(*p.Issue.Number), uint64(*p.Comment.ID)),
+						CommentHTMLURL: router.IssueCommentURL(ctx, owner, repo, uint64(*p.Issue.Number), uint64(*p.Comment.ID)),
 					}
 
 					//default:
@@ -360,7 +360,7 @@ func convert(
 						ChangeTitle:    *p.Issue.Title,
 						ChangeState:    changeState,
 						CommentBody:    *p.Comment.Body,
-						CommentHTMLURL: router.PullRequestURL(ctx, owner, repo, uint64(*p.Issue.Number), uint64(*p.Comment.ID)),
+						CommentHTMLURL: router.PullRequestCommentURL(ctx, owner, repo, uint64(*p.Issue.Number), uint64(*p.Comment.ID)),
 					}
 
 					//default:
@@ -387,7 +387,7 @@ func convert(
 					ChangeTitle:    *p.PullRequest.Title,
 					ChangeState:    changeState,
 					CommentBody:    *p.Comment.Body,
-					CommentHTMLURL: router.PullRequestURL(ctx, owner, repo, uint64(*p.PullRequest.Number), uint64(*p.Comment.ID)),
+					CommentHTMLURL: router.PullRequestReviewCommentURL(ctx, owner, repo, uint64(*p.PullRequest.Number), uint64(*p.Comment.ID)),
 				}
 
 				//default:
