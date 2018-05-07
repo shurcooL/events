@@ -16,10 +16,10 @@ import (
 
 	"dmitri.shuralyov.com/route/github"
 	"dmitri.shuralyov.com/state"
-	githubV3 "github.com/google/go-github/github"
+	githubv3 "github.com/google/go-github/github"
 	"github.com/shurcooL/events"
 	"github.com/shurcooL/events/event"
-	"github.com/shurcooL/githubql"
+	"github.com/shurcooL/githubv4"
 	"github.com/shurcooL/users"
 )
 
@@ -27,7 +27,7 @@ import (
 // It fetches events only for the specified user. user.Domain must be "github.com".
 //
 // If router is nil, github.DotCom router is used, which links to subjects on github.com.
-func NewService(clientV3 *githubV3.Client, clientV4 *githubql.Client, user users.User, router github.Router) (events.Service, error) {
+func NewService(clientV3 *githubv3.Client, clientV4 *githubv4.Client, user users.User, router github.Router) (events.Service, error) {
 	if user.Domain != "github.com" {
 		return nil, fmt.Errorf(`user.Domain is %q, it must be "github.com"`, user.Domain)
 	}
@@ -45,13 +45,13 @@ func NewService(clientV3 *githubV3.Client, clientV4 *githubql.Client, user users
 }
 
 type service struct {
-	clV3 *githubV3.Client // GitHub REST API v3 client.
-	clV4 *githubql.Client // GitHub GraphQL API v4 client.
+	clV3 *githubv3.Client // GitHub REST API v3 client.
+	clV4 *githubv4.Client // GitHub GraphQL API v4 client.
 	user users.User
 	rtr  github.Router
 
 	mu         sync.Mutex
-	events     []*githubV3.Event
+	events     []*githubv3.Event
 	commits    map[string]event.Commit // SHA -> Commit.
 	prs        map[string]bool         // PR API URL -> Pull Request merged.
 	fetchError error
@@ -108,7 +108,7 @@ func (s *service) fetchEvents(
 	ctx context.Context,
 	commits map[string]event.Commit,
 ) (
-	events []*githubV3.Event,
+	events []*githubv3.Event,
 	_ map[string]event.Commit,
 	prs map[string]bool,
 	pollInterval time.Duration,
@@ -116,7 +116,7 @@ func (s *service) fetchEvents(
 ) {
 	// TODO: Investigate this:
 	//       Events support pagination, however the per_page option is unsupported. The fixed page size is 30 items. Fetching up to ten pages is supported, for a total of 300 events.
-	events, resp, err := s.clV3.Activity.ListEventsPerformedByUser(ctx, s.user.Login, true, &githubV3.ListOptions{PerPage: 100})
+	events, resp, err := s.clV3.Activity.ListEventsPerformedByUser(ctx, s.user.Login, true, &githubv3.ListOptions{PerPage: 100})
 	if err != nil {
 		return nil, nil, nil, 0, err
 	}
@@ -131,7 +131,7 @@ func (s *service) fetchEvents(
 			return nil, nil, nil, 0, fmt.Errorf("fetchEvents: ParsePayload failed: %v", err)
 		}
 		switch p := payload.(type) {
-		case *githubV3.PushEvent:
+		case *githubv3.PushEvent:
 			for _, c := range p.Commits {
 				used[*c.SHA] = true
 				if _, ok := commits[*c.SHA]; ok {
@@ -155,7 +155,7 @@ func (s *service) fetchEvents(
 				}
 				commits[*c.SHA] = commit
 			}
-		case *githubV3.CommitCommentEvent:
+		case *githubv3.CommitCommentEvent:
 			used[*p.Comment.CommitID] = true
 			if _, ok := commits[*p.Comment.CommitID]; ok {
 				continue
@@ -173,7 +173,7 @@ func (s *service) fetchEvents(
 			}
 			commits[*p.Comment.CommitID] = commit
 
-		case *githubV3.IssueCommentEvent:
+		case *githubv3.IssueCommentEvent:
 			if p.Issue.PullRequestLinks == nil {
 				continue
 			}
@@ -199,7 +199,7 @@ func (s *service) fetchEvents(
 func (s *service) fetchCommit(ctx context.Context, repoID int64, sha string) (event.Commit, error) {
 	// TODO: It'd be better to be able to batch and fetch all commits at once (in fetchEvents loop),
 	//       rather than making an individual query for each.
-	//       See https://github.com/shurcooL/githubql/issues/17.
+	//       See https://github.com/shurcooL/githubv4/issues/17.
 
 	commitID := fmt.Sprintf("06:Commit%d:%s", repoID, sha)
 	var q struct {
@@ -215,7 +215,7 @@ func (s *service) fetchCommit(ctx context.Context, repoID int64, sha string) (ev
 		} `graphql:"node(id:$commitID)"`
 	}
 	variables := map[string]interface{}{
-		"commitID": githubql.ID(base64.StdEncoding.EncodeToString([]byte(commitID))), // HACK, TODO: Confirm StdEncoding vs URLEncoding.
+		"commitID": githubv4.ID(base64.StdEncoding.EncodeToString([]byte(commitID))), // HACK, TODO: Confirm StdEncoding vs URLEncoding.
 	}
 	err := s.clV4.Query(ctx, &q, variables)
 	if err != nil {
@@ -238,7 +238,7 @@ func (s *service) fetchPullRequestMerged(ctx context.Context, prURL string) (boo
 		return false, err
 	}
 	resp, err := s.clV3.Do(ctx, req, nil)
-	switch e, ok := err.(*githubV3.ErrorResponse); {
+	switch e, ok := err.(*githubv3.ErrorResponse); {
 	case err == nil && resp.StatusCode == http.StatusNoContent:
 		// PR merged.
 		return true, nil
@@ -257,7 +257,7 @@ func (s *service) fetchPullRequestMerged(ctx context.Context, prURL string) (boo
 // otherwise convert panics. commits key is SHA.
 func convert(
 	ctx context.Context,
-	events []*githubV3.Event,
+	events []*githubv3.Event,
 	commits map[string]event.Commit,
 	prs map[string]bool,
 	router github.Router,
@@ -277,22 +277,22 @@ func convert(
 		owner, repo := splitOwnerRepo(*e.Repo.Name)
 		payload, err := e.ParsePayload()
 		if err != nil {
-			panic(fmt.Errorf("internal error: convert given a githubV3.Event with in invalid payload: %v", err))
+			panic(fmt.Errorf("internal error: convert given a githubv3.Event with an invalid payload: %v", err))
 		}
 		switch p := payload.(type) {
-		case *githubV3.IssuesEvent:
+		case *githubv3.IssuesEvent:
 			switch *p.Action {
 			case "opened", "closed", "reopened":
 
 				//default:
-				//log.Println("convert: unsupported *githubV3.IssuesEvent action:", *p.Action)
+				//log.Println("convert: unsupported *githubv3.IssuesEvent action:", *p.Action)
 			}
 			ee.Payload = event.Issue{
 				Action:       *p.Action,
 				IssueTitle:   *p.Issue.Title,
 				IssueHTMLURL: router.IssueURL(ctx, owner, repo, uint64(*p.Issue.Number)),
 			}
-		case *githubV3.PullRequestEvent:
+		case *githubv3.PullRequestEvent:
 			var action string
 			switch {
 			case *p.Action == "opened":
@@ -305,7 +305,7 @@ func convert(
 				action = "reopened"
 
 				//default:
-				//log.Println("convert: unsupported *githubV3.PullRequestEvent PullRequest.State:", *p.PullRequest.State, "PullRequest.Merged:", *p.PullRequest.Merged)
+				//log.Println("convert: unsupported *githubv3.PullRequestEvent PullRequest.State:", *p.PullRequest.State, "PullRequest.Merged:", *p.PullRequest.Merged)
 			}
 			ee.Payload = event.Change{
 				Action:        action,
@@ -313,7 +313,7 @@ func convert(
 				ChangeHTMLURL: router.PullRequestURL(ctx, owner, repo, uint64(*p.PullRequest.Number)),
 			}
 
-		case *githubV3.IssueCommentEvent:
+		case *githubv3.IssueCommentEvent:
 			switch p.Issue.PullRequestLinks {
 			case nil: // Issue.
 				switch *p.Action {
@@ -325,7 +325,7 @@ func convert(
 					case "closed":
 						issueState = state.IssueClosed
 					default:
-						log.Printf("convert: unsupported *githubV3.IssueCommentEvent (issue): Issue.State=%v\n", *p.Issue.State)
+						log.Printf("convert: unsupported *githubv3.IssueCommentEvent (issue): Issue.State=%v\n", *p.Issue.State)
 						continue
 					}
 					ee.Payload = event.IssueComment{
@@ -353,7 +353,7 @@ func convert(
 					case *p.Issue.State == "closed" && merged:
 						changeState = state.ChangeMerged
 					default:
-						log.Printf("convert: unsupported *githubV3.IssueCommentEvent (pr): merged=%v Issue.State=%v\n", prs[*p.Issue.PullRequestLinks.URL], *p.Issue.State)
+						log.Printf("convert: unsupported *githubv3.IssueCommentEvent (pr): merged=%v Issue.State=%v\n", prs[*p.Issue.PullRequestLinks.URL], *p.Issue.State)
 						continue
 					}
 					ee.Payload = event.ChangeComment{
@@ -368,7 +368,7 @@ func convert(
 					//e.Action = component.Text(fmt.Sprintf("%v on a pull request in", *p.Action))
 				}
 			}
-		case *githubV3.PullRequestReviewCommentEvent:
+		case *githubv3.PullRequestReviewCommentEvent:
 			switch *p.Action {
 			case "created":
 				var changeState state.Change
@@ -380,7 +380,7 @@ func convert(
 				case p.PullRequest.MergedAt != nil:
 					changeState = state.ChangeMerged
 				default:
-					log.Printf("convert: unsupported *githubV3.PullRequestReviewCommentEvent: PullRequest.MergedAt=%v PullRequest.State=%v\n", p.PullRequest.MergedAt, *p.PullRequest.State)
+					log.Printf("convert: unsupported *githubv3.PullRequestReviewCommentEvent: PullRequest.MergedAt=%v PullRequest.State=%v\n", p.PullRequest.MergedAt, *p.PullRequest.State)
 					continue
 				}
 				ee.Payload = event.ChangeComment{
@@ -394,13 +394,13 @@ func convert(
 				//basicEvent.WIP = true
 				//e.Action = component.Text(fmt.Sprintf("%v on a pull request in", *p.Action))
 			}
-		case *githubV3.CommitCommentEvent:
+		case *githubv3.CommitCommentEvent:
 			ee.Payload = event.CommitComment{
 				Commit:      commits[*p.Comment.CommitID],
 				CommentBody: *p.Comment.Body,
 			}
 
-		case *githubV3.PushEvent:
+		case *githubv3.PushEvent:
 			var cs []event.Commit
 			for _, c := range p.Commits {
 				cs = append(cs, commits[*c.SHA])
@@ -414,10 +414,10 @@ func convert(
 				BeforeHTMLURL: "https://github.com/" + *e.Repo.Name + "/commit/" + *p.Before,
 			}
 
-		case *githubV3.WatchEvent:
+		case *githubv3.WatchEvent:
 			ee.Payload = event.Star{}
 
-		case *githubV3.CreateEvent:
+		case *githubv3.CreateEvent:
 			switch *p.RefType {
 			case "repository":
 				ee.Payload = event.Create{
@@ -437,17 +437,17 @@ func convert(
 				//	Text: *p.Ref,
 				//}
 			}
-		case *githubV3.ForkEvent:
+		case *githubv3.ForkEvent:
 			ee.Payload = event.Fork{
 				Container: "github.com/" + *p.Forkee.FullName,
 			}
-		case *githubV3.DeleteEvent:
+		case *githubv3.DeleteEvent:
 			ee.Payload = event.Delete{
 				Type: *p.RefType, // TODO: Verify *p.RefType?
 				Name: *p.Ref,
 			}
 
-		case *githubV3.GollumEvent:
+		case *githubv3.GollumEvent:
 			var pages []event.Page
 			for _, p := range p.Pages {
 				pages = append(pages, event.Page{
@@ -462,7 +462,7 @@ func convert(
 				Pages: pages,
 			}
 
-		case *githubV3.MemberEvent:
+		case *githubv3.MemberEvent:
 			// Unsupported event type, skip it.
 			continue
 
