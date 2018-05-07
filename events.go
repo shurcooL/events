@@ -21,15 +21,3 @@ type ExternalService interface {
 	// event.Time time zone must be UTC.
 	Log(ctx context.Context, event event.Event) error
 }
-
-// CONSIDER: Store for events.
-/*type Store interface {
-	// Append adds event to the end.
-	Append(ctx context.Context, event event.Event) error
-
-	// Get fetches ...
-	//Get(ctx context.Context) (event.Event, error)
-
-	// CONSIDER: Delete outdated events from beginning.
-	//Delete(ctx context.Context, ...) error
-}*/
