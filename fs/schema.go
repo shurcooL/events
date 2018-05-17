@@ -136,9 +136,10 @@ func (e *eventDisk) UnmarshalJSON(b []byte) error {
 	if err != nil {
 		return err
 	}
-	*e = eventDisk{}
-	e.Time = v.Time
-	e.Container = v.Container
+	*e = eventDisk{
+		Time:      v.Time,
+		Container: v.Container,
+	}
 	switch v.Type {
 	case "issue":
 		var p issue
