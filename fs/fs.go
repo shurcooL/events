@@ -30,13 +30,13 @@ func NewService(root webdav.FileSystem, user users.User, users users.Service) (e
 }
 
 type service struct {
-	fs    webdav.FileSystem
-	user  users.User
-	users users.Service
-
 	mu     sync.Mutex
+	fs     webdav.FileSystem
 	ring   ring
 	events [ringSize]event.Event // Latest events are added to the end.
+
+	user  users.User
+	users users.Service
 }
 
 func (s *service) load() error {
