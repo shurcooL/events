@@ -223,9 +223,9 @@ type Star struct{}
 
 // Create is a create event.
 type Create struct {
-	Type        string // "repository", "branch", "tag".
+	Type        string // "repository", "package", "branch", "tag".
 	Name        string // Only for "branch", "tag" types.
-	Description string // Only for "repository" type.
+	Description string // Only for "repository", "package" types.
 }
 
 // Fork is a fork event.
