@@ -15,13 +15,8 @@ import (
 )
 
 func Test(t *testing.T) {
-	mem := webdav.NewMemFS()
-	err := mem.Mkdir(context.Background(), "1@example.org", 0755)
-	if err != nil {
-		t.Fatal(err)
-	}
 	usersService := &mockUsers{Current: mockUser.UserSpec}
-	s, err := fs.NewService(mem, mockUser, usersService)
+	s, err := fs.NewService(webdav.NewMemFS(), mockUser, usersService)
 	if err != nil {
 		t.Fatal(err)
 	}

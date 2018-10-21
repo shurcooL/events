@@ -41,7 +41,9 @@ type service struct {
 
 func (s *service) load() error {
 	err := jsonDecodeFile(context.Background(), s.fs, ringPath(s.user.UserSpec), &s.ring)
-	if err != nil && !os.IsNotExist(err) {
+	if os.IsNotExist(err) {
+		s.ring = ring{}
+	} else if err != nil {
 		return err
 	}
 	for i := 0; i < s.ring.Length; i++ {
@@ -94,7 +96,7 @@ func (s *service) Log(ctx context.Context, event event.Event) error {
 
 	// Commit to storage first, returning error on failure.
 	// Write the event file, then write the ring file, so that partial failure is less bad.
-	err = jsonEncodeFile(ctx, s.fs, eventPath(s.user.UserSpec, idx), fromEvent(event))
+	err = jsonEncodeFileWithMkdirAll(ctx, s.fs, eventPath(s.user.UserSpec, idx), fromEvent(event))
 	if err != nil {
 		return err
 	}
