@@ -317,6 +317,7 @@ type changeComment struct {
 	ChangeTitle    string
 	ChangeState    string
 	CommentBody    string
+	CommentReview  int `json:",omitempty"`
 	CommentHTMLURL string
 }
 
@@ -330,10 +331,24 @@ func fromChangeComment(c event.ChangeComment) changeComment {
 	case state.ChangeMerged:
 		changeState = "merged"
 	}
+	var commentReview int
+	switch c.CommentReview {
+	case state.ReviewPlus2:
+		commentReview = +2
+	case state.ReviewPlus1:
+		commentReview = +1
+	case state.ReviewNoScore:
+		commentReview = 0
+	case state.ReviewMinus1:
+		commentReview = -1
+	case state.ReviewMinus2:
+		commentReview = -2
+	}
 	return changeComment{
 		ChangeTitle:    c.ChangeTitle,
 		ChangeState:    changeState,
 		CommentBody:    c.CommentBody,
+		CommentReview:  commentReview,
 		CommentHTMLURL: c.CommentHTMLURL,
 	}
 }
@@ -348,10 +363,24 @@ func (c changeComment) ChangeComment() event.ChangeComment {
 	case "merged":
 		changeState = state.ChangeMerged
 	}
+	var commentReview state.Review
+	switch c.CommentReview {
+	case +2:
+		commentReview = state.ReviewPlus2
+	case +1:
+		commentReview = state.ReviewPlus1
+	case 0:
+		commentReview = state.ReviewNoScore
+	case -1:
+		commentReview = state.ReviewMinus1
+	case -2:
+		commentReview = state.ReviewMinus2
+	}
 	return event.ChangeComment{
 		ChangeTitle:    c.ChangeTitle,
 		ChangeState:    changeState,
 		CommentBody:    c.CommentBody,
+		CommentReview:  commentReview,
 		CommentHTMLURL: c.CommentHTMLURL,
 	}
 }

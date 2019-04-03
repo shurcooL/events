@@ -394,6 +394,8 @@ func convert(
 				//basicEvent.WIP = true
 				//e.Action = component.Text(fmt.Sprintf("%v on a pull request in", *p.Action))
 			}
+		// TODO: Add support for *githubv3.PullRequestReviewEvent whenever GitHub API v3 starts
+		//       including it... Map it to an event.ChangeComment with the CommentReview field set.
 		case *githubv3.CommitCommentEvent:
 			ee.Payload = event.CommitComment{
 				Commit:      commits[*p.Comment.CommitID],

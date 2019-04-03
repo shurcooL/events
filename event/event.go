@@ -194,10 +194,12 @@ type IssueComment struct {
 }
 
 // ChangeComment is a change comment event.
+// A change comment is a review iff CommentReview is non-zero.
 type ChangeComment struct {
 	ChangeTitle    string
 	ChangeState    state.Change
 	CommentBody    string
+	CommentReview  state.Review
 	CommentHTMLURL string
 }
 
