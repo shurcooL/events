@@ -17,6 +17,7 @@ import (
 	"dmitri.shuralyov.com/route/github"
 	"dmitri.shuralyov.com/state"
 	githubv3 "github.com/google/go-github/github"
+	"github.com/rogpeppe/go-internal/modfile"
 	"github.com/shurcooL/events"
 	"github.com/shurcooL/events/event"
 	"github.com/shurcooL/githubv4"
@@ -52,6 +53,7 @@ type service struct {
 
 	mu         sync.Mutex
 	events     []*githubv3.Event
+	repos      map[int64]repository    // Repo ID -> Module Path.
 	commits    map[string]event.Commit // SHA -> Commit.
 	prs        map[string]bool         // PR API URL -> Pull Request merged.
 	fetchError error
@@ -60,9 +62,9 @@ type service struct {
 // List lists events.
 func (s *service) List(ctx context.Context) ([]event.Event, error) {
 	s.mu.Lock()
-	events, commits, prs, fetchError := s.events, s.commits, s.prs, s.fetchError
+	events, repos, commits, prs, fetchError := s.events, s.repos, s.commits, s.prs, s.fetchError
 	s.mu.Unlock()
-	return convert(ctx, events, commits, prs, s.rtr), fetchError
+	return convert(ctx, events, repos, commits, prs, s.rtr), fetchError
 }
 
 // Log logs the event.
@@ -78,18 +80,22 @@ func (s *service) Log(_ context.Context, event event.Event) error {
 func (s *service) poll() {
 	for {
 		s.mu.Lock()
+		repos := make(map[int64]repository, len(s.repos))
+		for id, r := range s.repos {
+			repos[id] = r
+		}
 		commits := make(map[string]event.Commit, len(s.commits))
 		for sha, c := range s.commits {
 			commits[sha] = c
 		}
 		s.mu.Unlock()
-		events, commits, prs, pollInterval, fetchError := s.fetchEvents(context.Background(), commits)
+		events, repos, commits, prs, pollInterval, fetchError := s.fetchEvents(context.Background(), repos, commits)
 		if fetchError != nil {
 			log.Println("fetchEvents:", fetchError)
 		}
 		s.mu.Lock()
 		if fetchError == nil {
-			s.events, s.commits, s.prs = events, commits, prs
+			s.events, s.repos, s.commits, s.prs = events, repos, commits, prs
 		}
 		s.fetchError = fetchError
 		s.mu.Unlock()
@@ -101,16 +107,18 @@ func (s *service) poll() {
 	}
 }
 
-// fetchEvents fetches events, as well as mentioned commits and PRs from GitHub.
-// Provided commits must be non-nil, and it's used as a starting point.
-// Only missing commits are fetched, and unused commits are removed at the end.
+// fetchEvents fetches events, repository module paths, mentioned commits and PRs from GitHub.
+// Provided repos and commits must be non-nil, and they're used as a starting point.
+// Only missing repos and commits are fetched, and unused ones are removed at the end.
 func (s *service) fetchEvents(
 	ctx context.Context,
-	commits map[string]event.Commit,
+	repos map[int64]repository, // Repo ID -> Module Path.
+	commits map[string]event.Commit, // SHA -> Commit.
 ) (
 	events []*githubv3.Event,
-	_ map[string]event.Commit,
-	prs map[string]bool,
+	_ map[int64]repository, // repos.
+	_ map[string]event.Commit, // commits.
+	prs map[string]bool, // PR API URL -> Pull Request merged.
 	pollInterval time.Duration,
 	err error,
 ) {
@@ -118,22 +126,38 @@ func (s *service) fetchEvents(
 	//       Events support pagination, however the per_page option is unsupported. The fixed page size is 30 items. Fetching up to ten pages is supported, for a total of 300 events.
 	events, resp, err := s.clV3.Activity.ListEventsPerformedByUser(ctx, s.user.Login, true, &githubv3.ListOptions{PerPage: 100})
 	if err != nil {
-		return nil, nil, nil, 0, err
+		return nil, nil, nil, nil, 0, err
 	}
 	if pi, err := strconv.Atoi(resp.Header.Get("X-Poll-Interval")); err == nil {
 		pollInterval = time.Duration(pi) * time.Second
 	}
+
+	// Iterate over all events and fetch additional information
+	// needed based on their contents.
 	prs = make(map[string]bool)
-	used := make(map[string]bool) // A set of used commit SHAs.
+	usedRepos := make(map[int64]bool)    // A set of used repo IDs.
+	usedCommits := make(map[string]bool) // A set of used commit SHAs.
 	for _, e := range events {
 		payload, err := e.ParsePayload()
 		if err != nil {
-			return nil, nil, nil, 0, fmt.Errorf("fetchEvents: ParsePayload failed: %v", err)
+			return nil, nil, nil, nil, 0, fmt.Errorf("fetchEvents: ParsePayload failed: %v", err)
 		}
+
+		// Fetch the module path for this repository if not already known.
+		usedRepos[*e.Repo.ID] = true
+		if _, ok := repos[*e.Repo.ID]; !ok {
+			modulePath, err := s.fetchModulePath(ctx, *e.Repo.ID, "github.com/"+*e.Repo.Name)
+			if err != nil {
+				return nil, nil, nil, nil, 0, fmt.Errorf("fetchModulePath: %v", err)
+			}
+			repos[*e.Repo.ID] = repository{ModulePath: modulePath}
+		}
+
+		// Fetch the mentioned commits and PRs that aren't already known.
 		switch p := payload.(type) {
 		case *githubv3.PushEvent:
 			for _, c := range p.Commits {
-				used[*c.SHA] = true
+				usedCommits[*c.SHA] = true
 				if _, ok := commits[*c.SHA]; ok {
 					continue
 				}
@@ -151,12 +175,12 @@ func (s *service) fetchEvents(
 						AuthorAvatarURL: avatarURL,
 					}
 				} else if err != nil {
-					return nil, nil, nil, 0, fmt.Errorf("fetchCommit: %v", err)
+					return nil, nil, nil, nil, 0, fmt.Errorf("fetchCommit: %v", err)
 				}
 				commits[*c.SHA] = commit
 			}
 		case *githubv3.CommitCommentEvent:
-			used[*p.Comment.CommitID] = true
+			usedCommits[*p.Comment.CommitID] = true
 			if _, ok := commits[*p.Comment.CommitID]; ok {
 				continue
 			}
@@ -169,7 +193,7 @@ func (s *service) fetchEvents(
 					AuthorAvatarURL: "https://secure.gravatar.com/avatar?d=mm&f=y&s=96",
 				}
 			} else if err != nil {
-				return nil, nil, nil, 0, fmt.Errorf("fetchCommit: %v", err)
+				return nil, nil, nil, nil, 0, fmt.Errorf("fetchCommit: %v", err)
 			}
 			commits[*p.Comment.CommitID] = commit
 
@@ -182,22 +206,68 @@ func (s *service) fetchEvents(
 			}
 			merged, err := s.fetchPullRequestMerged(ctx, *p.Issue.PullRequestLinks.URL)
 			if err != nil {
-				return nil, nil, nil, 0, fmt.Errorf("fetchPullRequestMerged: %v", err)
+				return nil, nil, nil, nil, 0, fmt.Errorf("fetchPullRequestMerged: %v", err)
 			}
 			prs[*p.Issue.PullRequestLinks.URL] = merged
 		}
 	}
+
+	// Remove unused repos and commits.
+	for id := range repos {
+		if !usedRepos[id] {
+			delete(repos, id)
+		}
+	}
 	for sha := range commits {
-		if !used[sha] {
+		if !usedCommits[sha] {
 			delete(commits, sha)
 		}
 	}
-	return events, commits, prs, pollInterval, nil
+
+	return events, repos, commits, prs, pollInterval, nil
+}
+
+// fetchModulePath fetches the module path for the specified repository.
+// repoPath is returned as the module path if the repository has no go.mod file,
+// or if the go.mod file fails to parse.
+func (s *service) fetchModulePath(ctx context.Context, repoID int64, repoPath string) (string, error) {
+	// TODO: It'd be better to batch and fetch all module paths at once (in fetchEvents loop),
+	//       rather than making an individual query for each.
+	//       See https://github.com/shurcooL/githubv4/issues/17.
+
+	var q struct {
+		Node struct {
+			Repository struct {
+				Object *struct {
+					Blob struct {
+						Text string
+					} `graphql:"...on Blob"`
+				} `graphql:"object(expression:\"HEAD:go.mod\")"`
+			} `graphql:"...on Repository"`
+		} `graphql:"node(id:$repoID)"`
+	}
+	variables := map[string]interface{}{
+		"repoID": githubv4.ID(base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("010:Repository%d", repoID)))), // HACK, TODO: Confirm StdEncoding vs URLEncoding.
+	}
+	err := s.clV4.Query(ctx, &q, variables)
+	if err != nil {
+		return "", err
+	}
+	if q.Node.Repository.Object == nil {
+		// No go.mod file, so the module path must be equal to the repo path.
+		return repoPath, nil
+	}
+	modulePath := modfile.ModulePath([]byte(q.Node.Repository.Object.Blob.Text))
+	if modulePath == "" {
+		// No module path found in go.mod file, so fall back to using the repo path.
+		return repoPath, nil
+	}
+	return modulePath, nil
 }
 
 // fetchCommit fetches the specified commit.
 func (s *service) fetchCommit(ctx context.Context, repoID int64, sha string) (event.Commit, error) {
-	// TODO: It'd be better to be able to batch and fetch all commits at once (in fetchEvents loop),
+	// TODO: It'd be better to batch and fetch all commits at once (in fetchEvents loop),
 	//       rather than making an individual query for each.
 	//       See https://github.com/shurcooL/githubv4/issues/17.
 
@@ -258,8 +328,9 @@ func (s *service) fetchPullRequestMerged(ctx context.Context, prURL string) (boo
 func convert(
 	ctx context.Context,
 	events []*githubv3.Event,
-	commits map[string]event.Commit,
-	prs map[string]bool,
+	repos map[int64]repository, // Repo ID -> Module Path.
+	commits map[string]event.Commit, // SHA -> Commit.
+	prs map[string]bool, // PR API URL -> Pull Request merged.
 	router github.Router,
 ) []event.Event {
 	var es []event.Event
@@ -271,8 +342,12 @@ func convert(
 				Login:     *e.Actor.Login,
 				AvatarURL: *e.Actor.AvatarURL,
 			},
-			Container: "github.com/" + *e.Repo.Name,
+			Container: repos[*e.Repo.ID].ModulePath,
 		}
+
+		// TODO: Parse issue/PR title prefix and combine with information in module path
+		// to create the full import path pattern.
+		// TODO: Special-case the main Go repo (github.com/golang/go, id==23096959).
 
 		owner, repo := splitOwnerRepo(*e.Repo.Name)
 		payload, err := e.ParsePayload()
@@ -482,4 +557,10 @@ func convert(
 func splitOwnerRepo(ownerRepo string) (owner, repo string) {
 	i := strings.IndexByte(ownerRepo, '/')
 	return ownerRepo[:i], ownerRepo[i+1:]
+}
+
+// repository represents a GitHub repository.
+type repository struct {
+	// ModulePath is the module path of the module at the root of the repository.
+	ModulePath string
 }
