@@ -364,8 +364,11 @@ func convert(
 		}
 		switch p := payload.(type) {
 		case *githubv3.IssuesEvent:
+			var body string
 			switch *p.Action {
-			case "opened", "closed", "reopened":
+			case "opened":
+				body = *p.Issue.Body
+			case "closed", "reopened":
 
 				//default:
 				//log.Println("convert: unsupported *githubv3.IssuesEvent action:", *p.Action)
@@ -375,13 +378,15 @@ func convert(
 			ee.Payload = event.Issue{
 				Action:       *p.Action,
 				IssueTitle:   title,
+				IssueBody:    body,
 				IssueHTMLURL: router.IssueURL(ctx, owner, repo, uint64(*p.Issue.Number)),
 			}
 		case *githubv3.PullRequestEvent:
-			var action string
+			var action, body string
 			switch {
 			case *p.Action == "opened":
 				action = "opened"
+				body = *p.PullRequest.Body
 			case *p.Action == "closed" && !*p.PullRequest.Merged:
 				action = "closed"
 			case *p.Action == "closed" && *p.PullRequest.Merged:
@@ -397,6 +402,7 @@ func convert(
 			ee.Payload = event.Change{
 				Action:        action,
 				ChangeTitle:   title,
+				ChangeBody:    body,
 				ChangeHTMLURL: router.PullRequestURL(ctx, owner, repo, uint64(*p.PullRequest.Number)),
 			}
 

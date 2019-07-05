@@ -246,6 +246,7 @@ func (e eventDisk) Event(actor users.User) event.Event {
 type issue struct {
 	Action       string
 	IssueTitle   string
+	IssueBody    string `json:",omitempty"`
 	IssueHTMLURL string
 }
 
@@ -261,6 +262,7 @@ func (i issue) Issue() event.Issue {
 type change struct {
 	Action        string
 	ChangeTitle   string
+	ChangeBody    string `json:",omitempty"`
 	ChangeHTMLURL string
 }
 

@@ -184,6 +184,7 @@ func (e *Event) UnmarshalJSON(b []byte) error {
 type Issue struct {
 	Action       string // "opened", "closed", "reopened".
 	IssueTitle   string
+	IssueBody    string // Only set when action is "opened".
 	IssueHTMLURL string
 }
 
@@ -191,6 +192,7 @@ type Issue struct {
 type Change struct {
 	Action        string // "opened", "closed", "merged", "reopened".
 	ChangeTitle   string
+	ChangeBody    string // Only set when action is "opened".
 	ChangeHTMLURL string
 }
 
