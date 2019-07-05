@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"dmitri.shuralyov.com/go/prefixtitle"
 	"dmitri.shuralyov.com/route/github"
 	"dmitri.shuralyov.com/state"
 	githubv3 "github.com/google/go-github/github"
@@ -227,10 +228,21 @@ func (s *service) fetchEvents(
 	return events, repos, commits, prs, pollInterval, nil
 }
 
+// goRepoID is the repository ID of the github.com/golang/go repository.
+const goRepoID = 23096959
+
 // fetchModulePath fetches the module path for the specified repository.
 // repoPath is returned as the module path if the repository has no go.mod file,
 // or if the go.mod file fails to parse.
-func (s *service) fetchModulePath(ctx context.Context, repoID int64, repoPath string) (string, error) {
+//
+// For the main Go repository (i.e., https://github.com/golang/go),
+// the empty string is returned as the module path without using network.
+func (s *service) fetchModulePath(ctx context.Context, repoID int64, repoPath string) (modulePath string, _ error) {
+	if repoID == goRepoID {
+		// Use empty string as the module path for the main Go repository.
+		return "", nil
+	}
+
 	// TODO: It'd be better to batch and fetch all module paths at once (in fetchEvents loop),
 	//       rather than making an individual query for each.
 	//       See https://github.com/shurcooL/githubv4/issues/17.
@@ -257,7 +269,7 @@ func (s *service) fetchModulePath(ctx context.Context, repoID int64, repoPath st
 		// No go.mod file, so the module path must be equal to the repo path.
 		return repoPath, nil
 	}
-	modulePath := modfile.ModulePath([]byte(q.Node.Repository.Object.Blob.Text))
+	modulePath = modfile.ModulePath([]byte(q.Node.Repository.Object.Blob.Text))
 	if modulePath == "" {
 		// No module path found in go.mod file, so fall back to using the repo path.
 		return repoPath, nil
@@ -342,13 +354,9 @@ func convert(
 				Login:     *e.Actor.Login,
 				AvatarURL: *e.Actor.AvatarURL,
 			},
-			Container: repos[*e.Repo.ID].ModulePath,
 		}
 
-		// TODO: Parse issue/PR title prefix and combine with information in module path
-		// to create the full import path pattern.
-		// TODO: Special-case the main Go repo (github.com/golang/go, id==23096959).
-
+		modulePath := repos[*e.Repo.ID].ModulePath
 		owner, repo := splitOwnerRepo(*e.Repo.Name)
 		payload, err := e.ParsePayload()
 		if err != nil {
@@ -362,9 +370,11 @@ func convert(
 				//default:
 				//log.Println("convert: unsupported *githubv3.IssuesEvent action:", *p.Action)
 			}
+			paths, title := prefixtitle.ParseIssue(modulePath, *p.Issue.Title)
+			ee.Container = paths[0]
 			ee.Payload = event.Issue{
 				Action:       *p.Action,
-				IssueTitle:   *p.Issue.Title,
+				IssueTitle:   title,
 				IssueHTMLURL: router.IssueURL(ctx, owner, repo, uint64(*p.Issue.Number)),
 			}
 		case *githubv3.PullRequestEvent:
@@ -382,9 +392,11 @@ func convert(
 				//default:
 				//log.Println("convert: unsupported *githubv3.PullRequestEvent PullRequest.State:", *p.PullRequest.State, "PullRequest.Merged:", *p.PullRequest.Merged)
 			}
+			paths, title := prefixtitle.ParseChange(modulePath, *p.PullRequest.Title)
+			ee.Container = paths[0]
 			ee.Payload = event.Change{
 				Action:        action,
-				ChangeTitle:   *p.PullRequest.Title,
+				ChangeTitle:   title,
 				ChangeHTMLURL: router.PullRequestURL(ctx, owner, repo, uint64(*p.PullRequest.Number)),
 			}
 
@@ -403,8 +415,10 @@ func convert(
 						log.Printf("convert: unsupported *githubv3.IssueCommentEvent (issue): Issue.State=%v\n", *p.Issue.State)
 						continue
 					}
+					paths, title := prefixtitle.ParseIssue(modulePath, *p.Issue.Title)
+					ee.Container = paths[0]
 					ee.Payload = event.IssueComment{
-						IssueTitle:     *p.Issue.Title,
+						IssueTitle:     title,
 						IssueState:     issueState,
 						CommentBody:    *p.Comment.Body,
 						CommentHTMLURL: router.IssueCommentURL(ctx, owner, repo, uint64(*p.Issue.Number), uint64(*p.Comment.ID)),
@@ -431,8 +445,10 @@ func convert(
 						log.Printf("convert: unsupported *githubv3.IssueCommentEvent (pr): merged=%v Issue.State=%v\n", prs[*p.Issue.PullRequestLinks.URL], *p.Issue.State)
 						continue
 					}
+					paths, title := prefixtitle.ParseChange(modulePath, *p.Issue.Title)
+					ee.Container = paths[0]
 					ee.Payload = event.ChangeComment{
-						ChangeTitle:    *p.Issue.Title,
+						ChangeTitle:    title,
 						ChangeState:    changeState,
 						CommentBody:    *p.Comment.Body,
 						CommentHTMLURL: router.PullRequestCommentURL(ctx, owner, repo, uint64(*p.Issue.Number), uint64(*p.Comment.ID)),
@@ -458,8 +474,10 @@ func convert(
 					log.Printf("convert: unsupported *githubv3.PullRequestReviewCommentEvent: PullRequest.MergedAt=%v PullRequest.State=%v\n", p.PullRequest.MergedAt, *p.PullRequest.State)
 					continue
 				}
+				paths, title := prefixtitle.ParseChange(modulePath, *p.PullRequest.Title)
+				ee.Container = paths[0]
 				ee.Payload = event.ChangeComment{
-					ChangeTitle:    *p.PullRequest.Title,
+					ChangeTitle:    title,
 					ChangeState:    changeState,
 					CommentBody:    *p.Comment.Body,
 					CommentHTMLURL: router.PullRequestReviewCommentURL(ctx, owner, repo, uint64(*p.PullRequest.Number), uint64(*p.Comment.ID)),
@@ -472,8 +490,13 @@ func convert(
 		// TODO: Add support for *githubv3.PullRequestReviewEvent whenever GitHub API v3 starts
 		//       including it... Map it to an event.ChangeComment with the CommentReview field set.
 		case *githubv3.CommitCommentEvent:
+			c := commits[*p.Comment.CommitID]
+			subject, body := splitCommitMessage(c.Message)
+			paths, title := prefixtitle.ParseChange(modulePath, subject)
+			ee.Container = paths[0]
+			c.Message = joinCommitMessage(title, body)
 			ee.Payload = event.CommitComment{
-				Commit:      commits[*p.Comment.CommitID],
+				Commit:      c,
 				CommentBody: *p.Comment.Body,
 			}
 
@@ -482,6 +505,7 @@ func convert(
 			for _, c := range p.Commits {
 				cs = append(cs, commits[*c.SHA])
 			}
+			ee.Container = modulePath
 			ee.Payload = event.Push{
 				Branch:        strings.TrimPrefix(*p.Ref, "refs/heads/"),
 				Head:          *p.Head,
@@ -492,16 +516,19 @@ func convert(
 			}
 
 		case *githubv3.WatchEvent:
+			ee.Container = modulePath
 			ee.Payload = event.Star{}
 
 		case *githubv3.CreateEvent:
 			switch *p.RefType {
 			case "repository":
+				ee.Container = modulePath
 				ee.Payload = event.Create{
 					Type:        "repository",
 					Description: *p.Description,
 				}
 			case "branch", "tag":
+				ee.Container = modulePath
 				ee.Payload = event.Create{
 					Type: *p.RefType,
 					Name: *p.Ref,
@@ -515,10 +542,12 @@ func convert(
 				//}
 			}
 		case *githubv3.ForkEvent:
+			ee.Container = modulePath
 			ee.Payload = event.Fork{
 				Container: "github.com/" + *p.Forkee.FullName,
 			}
 		case *githubv3.DeleteEvent:
+			ee.Container = modulePath
 			ee.Payload = event.Delete{
 				Type: *p.RefType, // TODO: Verify *p.RefType?
 				Name: *p.Ref,
@@ -535,6 +564,7 @@ func convert(
 					CompareHTMLURL: *p.HTMLURL + "/_compare/" + *p.SHA + "^..." + *p.SHA,
 				})
 			}
+			ee.Container = modulePath
 			ee.Payload = event.Wiki{
 				Pages: pages,
 			}
@@ -563,4 +593,22 @@ func splitOwnerRepo(ownerRepo string) (owner, repo string) {
 type repository struct {
 	// ModulePath is the module path of the module at the root of the repository.
 	ModulePath string
+}
+
+// splitCommitMessage splits commit message s into subject and body, if any.
+func splitCommitMessage(s string) (subject, body string) {
+	i := strings.Index(s, "\n\n")
+	if i == -1 {
+		return strings.ReplaceAll(s, "\n", " "), ""
+	}
+	return strings.ReplaceAll(s[:i], "\n", " "), s[i+2:]
+}
+
+// joinCommitMessage joins commit subject and body into a commit message.
+// The empty string value for body represents no body.
+func joinCommitMessage(subject, body string) string {
+	if body == "" {
+		return subject
+	}
+	return subject + "\n\n" + body
 }

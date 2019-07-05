@@ -12,9 +12,18 @@ import (
 
 // Event represents an event.
 type Event struct {
-	Time      time.Time
-	Actor     users.User // UserSpec and Login fields populated.
-	Container string     // URL of container without schema. E.g., "github.com/user/repo".
+	Time  time.Time
+	Actor users.User // UserSpec and Login fields populated.
+
+	// Container is the URL (without schema) of event target.
+	//
+	// For event types Issue, Change, IssueComment, ChangeComment, CommitComment,
+	// and Create with "package" type, it's the import path of the target package.
+	// E.g., "golang.org/x/image/font/sfnt" or "github.com/user/repo/sub/dir".
+	//
+	// For all other event types, it is the module path of the target repository.
+	// E.g., "golang.org/x/image" or "github.com/user/repo".
+	Container string
 
 	// Payload specifies the event type. It's one of:
 	// Issue, Change, IssueComment, ChangeComment, CommitComment,
@@ -227,12 +236,12 @@ type Star struct{}
 type Create struct {
 	Type        string // "repository", "package", "branch", "tag".
 	Name        string // Only for "branch", "tag" types.
-	Description string // Only for "repository", "package" types.
+	Description string // Only for "repository", "package" types. Optional.
 }
 
 // Fork is a fork event.
 type Fork struct {
-	Container string // URL of forkee container without schema. E.g., "github.com/user/repo".
+	Container string // URL (without schema) of the created repository. E.g., "github.com/anotheruser/repo".
 }
 
 // Delete is a delete event.
