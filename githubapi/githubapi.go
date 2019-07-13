@@ -148,7 +148,10 @@ func (s *service) fetchEvents(
 		usedRepos[*e.Repo.ID] = true
 		if _, ok := repos[*e.Repo.ID]; !ok {
 			modulePath, err := s.fetchModulePath(ctx, *e.Repo.ID, "github.com/"+*e.Repo.Name)
-			if err != nil {
+			if err != nil && strings.HasPrefix(err.Error(), "Could not resolve to a node ") { // E.g., because the repo was deleted.
+				log.Printf("fetchModulePath: repository id=%d name=%q was not found: %v\n", *e.Repo.ID, *e.Repo.Name, err)
+				modulePath = "github.com/" + *e.Repo.Name
+			} else if err != nil {
 				return nil, nil, nil, nil, 0, fmt.Errorf("fetchModulePath: %v", err)
 			}
 			repos[*e.Repo.ID] = repository{ModulePath: modulePath}
