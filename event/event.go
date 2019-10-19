@@ -69,7 +69,7 @@ func (e Event) MarshalJSON() ([]byte, error) {
 	case Wiki:
 		v.Type = "Wiki"
 	default:
-		return nil, fmt.Errorf("Event.MarshalJSON: invalid payload type %T", e.Payload)
+		return nil, fmt.Errorf("Event.MarshalJSON: invalid payload type %T; Event was %+v", e.Payload, e)
 	}
 	return json.Marshal(v)
 }
