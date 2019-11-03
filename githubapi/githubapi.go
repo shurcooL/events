@@ -18,11 +18,11 @@ import (
 	"dmitri.shuralyov.com/route/github"
 	"dmitri.shuralyov.com/state"
 	githubv3 "github.com/google/go-github/github"
-	"github.com/rogpeppe/go-internal/modfile"
 	"github.com/shurcooL/events"
 	"github.com/shurcooL/events/event"
 	"github.com/shurcooL/githubv4"
 	"github.com/shurcooL/users"
+	"golang.org/x/mod/modfile"
 )
 
 // NewService creates a GitHub-backed events.Service using given GitHub client.
