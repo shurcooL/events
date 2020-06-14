@@ -70,7 +70,7 @@ func (r ring) Next() (ring ring, idx int) {
 type eventDisk struct {
 	Time      time.Time
 	Container string
-	Payload   interface{}
+	Payload   interface{} // One of event.{Issue,Change,IssueComment,ChangeComment,CommitComment,Push,Star,Create,Fork,Delete,Wiki}.
 }
 
 func (e eventDisk) MarshalJSON() ([]byte, error) {
